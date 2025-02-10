@@ -11,9 +11,11 @@ struct Request {
     std::string name;
     std::string url;
     std::string response;
+    bool open = true;
 };
 
-static std::vector<Request> requests;
+static std::vector<std::shared_ptr<Request>> requests;
+static int selectedRequest = -1;
 static char urlBuffer[1024] = "";
 static char responseBuffer[16384] = "";
 
@@ -22,7 +24,7 @@ static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* use
     return size * nmemb;
 }
 
-void makeRequest(const char* url) {
+void makeRequest(const char* url, Request* req) {
     CURL* curl = curl_easy_init();
     if (curl) {
         std::string response;
@@ -32,16 +34,26 @@ void makeRequest(const char* url) {
 
         CURLcode res = curl_easy_perform(curl);
         if (res == CURLE_OK) {
-            Request req;
-            req.name = "Request " + std::to_string(requests.size() + 1);
-            req.url = url;
-            req.response = response;
-            requests.push_back(req);
+            req->response = response;
             strncpy(responseBuffer, response.c_str(), sizeof(responseBuffer));
         }
 
         curl_easy_cleanup(curl);
     }
+}
+
+void renderRequestPanel(std::shared_ptr<Request>& req) {
+    ImGui::PushID(req.get());
+
+    ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
+    if (ImGui::Button("Send Request")) {
+        makeRequest(urlBuffer, req.get());
+    }
+
+    ImGui::InputTextMultiline("Response", responseBuffer, sizeof(responseBuffer),
+        ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+
+    ImGui::PopID();
 }
 
 int main() {
@@ -110,29 +122,43 @@ int main() {
 
         // Requests panel
         ImGui::Begin("Requests");
-        if (ImGui::TreeNode("History")) {
-            for (const auto& req : requests) {
-                if (ImGui::TreeNode(req.name.c_str())) {
-                    ImGui::Text("URL: %s", req.url.c_str());
-                    ImGui::TreePop();
-                }
+        for (size_t i = 0; i < requests.size(); i++) {
+            auto& req = requests[i];
+            if (ImGui::Selectable(req->name.c_str(), selectedRequest == i)) {
+                selectedRequest = i;
+                req->open = true;
             }
-            ImGui::TreePop();
+        }
+        if (ImGui::Button("New Request")) {
+            auto req = std::make_shared<Request>();
+            req->name = "Request " + std::to_string(requests.size() + 1);
+            requests.push_back(req);
+            selectedRequest = requests.size() - 1;
         }
         ImGui::End();
 
-        // Request panel
-        ImGui::Begin("Request");
-        ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
-        if (ImGui::Button("Send Request")) {
-            makeRequest(urlBuffer);
+        ImGui::Begin("Content");
+        if (requests.empty()) {
+            ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2);
+            float buttonWidth = 200;
+            ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) / 2);
+            if (ImGui::Button("Create First Request", ImVec2(buttonWidth, 0))) {
+                auto req = std::make_shared<Request>();
+                req->name = "Request 1";
+                requests.push_back(req);
+                selectedRequest = 0;
+            }
+        } else {
+            if (ImGui::BeginTabBar("RequestTabs")) {
+                for (auto& req : requests) {
+                    if (req->open && ImGui::BeginTabItem(req->name.c_str(), &req->open)) {
+                        renderRequestPanel(req);
+                        ImGui::EndTabItem();
+                    }
+                }
+                ImGui::EndTabBar();
+            }
         }
-        ImGui::End();
-
-        // Response panel
-        ImGui::Begin("Response");
-        ImGui::InputTextMultiline("##response", responseBuffer, sizeof(responseBuffer),
-            ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
         ImGui::End();
 
         // End DockSpace
