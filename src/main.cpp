@@ -71,7 +71,8 @@ int main() {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGuiIO& io = ImGui::GetIO();
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
@@ -88,12 +89,27 @@ int main() {
         ImGui_ImplGlfw_NewFrame();
         ImGui::NewFrame();
 
-        // Set initial window positions and sizes
-        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(300, 720), ImGuiCond_FirstUseEver);
+        // DockSpace setup
+        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        ImGui::SetNextWindowPos(viewport->Pos);
+        ImGui::SetNextWindowSize(viewport->Size);
+        ImGui::SetNextWindowViewport(viewport->ID);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-        // Left panel - Request History
-        ImGui::Begin("Requests", nullptr, ImGuiWindowFlags_NoMove);
+        ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking |
+            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+
+        ImGui::Begin("DockSpace Demo", nullptr, window_flags);
+        ImGui::PopStyleVar(3);
+
+        ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
+        ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
+
+        // Requests panel
+        ImGui::Begin("Requests");
         if (ImGui::TreeNode("History")) {
             for (const auto& req : requests) {
                 if (ImGui::TreeNode(req.name.c_str())) {
@@ -105,22 +121,21 @@ int main() {
         }
         ImGui::End();
 
-        // Middle panel
-        ImGui::SetNextWindowPos(ImVec2(300, 0), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(480, 720), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Request", nullptr, ImGuiWindowFlags_NoMove);
+        // Request panel
+        ImGui::Begin("Request");
         ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
         if (ImGui::Button("Send Request")) {
             makeRequest(urlBuffer);
         }
         ImGui::End();
 
-        // Right panel
-        ImGui::SetNextWindowPos(ImVec2(780, 0), ImGuiCond_FirstUseEver);
-        ImGui::SetNextWindowSize(ImVec2(500, 720), ImGuiCond_FirstUseEver);
-        ImGui::Begin("Response", nullptr, ImGuiWindowFlags_NoMove);
+        // Response panel
+        ImGui::Begin("Response");
         ImGui::InputTextMultiline("##response", responseBuffer, sizeof(responseBuffer),
             ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+        ImGui::End();
+
+        // End DockSpace
         ImGui::End();
 
         ImGui::Render();
