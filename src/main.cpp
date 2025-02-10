@@ -7,10 +7,19 @@
 #include <vector>
 #include <iostream>
 
+enum class HttpMethod {
+    GET,
+    POST,
+    PUT,
+    DELETE,
+    PATCH
+};
+
 struct Request {
     std::string name;
     std::string url;
     std::string response;
+    HttpMethod method = HttpMethod::GET;
     bool open = true;
 };
 
@@ -18,6 +27,25 @@ static std::vector<std::shared_ptr<Request>> requests;
 static int selectedRequest = -1;
 static char urlBuffer[1024] = "";
 static char responseBuffer[16384] = "";
+
+const std::map<HttpMethod, ImVec4> methodColors = {
+    {HttpMethod::GET, ImVec4(0.0f, 0.8f, 0.0f, 1.0f)},
+    {HttpMethod::POST, ImVec4(0.8f, 0.4f, 0.0f, 1.0f)},
+    {HttpMethod::PUT, ImVec4(0.0f, 0.4f, 0.8f, 1.0f)},
+    {HttpMethod::DELETE, ImVec4(0.8f, 0.0f, 0.0f, 1.0f)},
+    {HttpMethod::PATCH, ImVec4(0.8f, 0.8f, 0.0f, 1.0f)}
+};
+
+const char* methodToString(HttpMethod method) {
+    switch (method) {
+        case HttpMethod::GET: return "GET";
+        case HttpMethod::POST: return "POST";
+        case HttpMethod::PUT: return "PUT";
+        case HttpMethod::DELETE: return "DELETE";
+        case HttpMethod::PATCH: return "PATCH";
+        default: return "UNKNOWN";
+    }
+}
 
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
     ((std::string*)userp)->append((char*)contents, size * nmemb);
@@ -32,6 +60,23 @@ void makeRequest(const char* url, Request* req) {
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
 
+        switch (req->method) {
+            case HttpMethod::POST:
+                curl_easy_setopt(curl, CURLOPT_POST, 1L);
+                break;
+            case HttpMethod::PUT:
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+                break;
+            case HttpMethod::DELETE:
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
+                break;
+            case HttpMethod::PATCH:
+                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+                break;
+            default:
+                curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
+        }
+
         CURLcode res = curl_easy_perform(curl);
         if (res == CURLE_OK) {
             req->response = response;
@@ -45,7 +90,17 @@ void makeRequest(const char* url, Request* req) {
 void renderRequestPanel(std::shared_ptr<Request>& req) {
     ImGui::PushID(req.get());
 
+    const char* methods[] = {"GET", "POST", "PUT", "DELETE", "PATCH"};
+    int currentMethod = static_cast<int>(req->method);
+    ImGui::PushItemWidth(100);
+    if (ImGui::Combo("Method", &currentMethod, methods, IM_ARRAYSIZE(methods))) {
+        req->method = static_cast<HttpMethod>(currentMethod);
+    }
+    ImGui::PopItemWidth();
+
+    ImGui::SameLine();
     ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
+
     if (ImGui::Button("Send Request")) {
         makeRequest(urlBuffer, req.get());
     }
@@ -54,6 +109,32 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
         ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
 
     ImGui::PopID();
+}
+
+void renderRequestList() {
+    ImGui::Begin("Requests");
+    for (size_t i = 0; i < requests.size(); i++) {
+        auto& req = requests[i];
+
+        // Push method color
+        ImGui::PushStyleColor(ImGuiCol_Text, methodColors.at(req->method));
+
+        std::string label = std::string(methodToString(req->method)) + " " + req->name;
+        if (ImGui::Selectable(label.c_str(), selectedRequest == i)) {
+            selectedRequest = i;
+            req->open = true;
+        }
+
+        ImGui::PopStyleColor();
+    }
+
+    if (ImGui::Button("New Request")) {
+        auto req = std::make_shared<Request>();
+        req->name = "Request " + std::to_string(requests.size() + 1);
+        requests.push_back(req);
+        selectedRequest = requests.size() - 1;
+    }
+    ImGui::End();
 }
 
 int main() {
@@ -121,21 +202,7 @@ int main() {
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
 
         // Requests panel
-        ImGui::Begin("Requests");
-        for (size_t i = 0; i < requests.size(); i++) {
-            auto& req = requests[i];
-            if (ImGui::Selectable(req->name.c_str(), selectedRequest == i)) {
-                selectedRequest = i;
-                req->open = true;
-            }
-        }
-        if (ImGui::Button("New Request")) {
-            auto req = std::make_shared<Request>();
-            req->name = "Request " + std::to_string(requests.size() + 1);
-            requests.push_back(req);
-            selectedRequest = requests.size() - 1;
-        }
-        ImGui::End();
+        renderRequestList();
 
         ImGui::Begin("Content");
         if (requests.empty()) {
