@@ -1,0 +1,145 @@
+#include "imgui.h"
+#include "imgui_impl_glfw.h"
+#include "imgui_impl_opengl3.h"
+#include <curl/curl.h>
+#include <nlohmann/json.hpp>
+#include <GLFW/glfw3.h>
+#include <vector>
+#include <iostream>
+
+struct Request {
+    std::string name;
+    std::string url;
+    std::string response;
+};
+
+static std::vector<Request> requests;
+static char urlBuffer[1024] = "";
+static char responseBuffer[16384] = "";
+
+static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
+    ((std::string*)userp)->append((char*)contents, size * nmemb);
+    return size * nmemb;
+}
+
+void makeRequest(const char* url) {
+    CURL* curl = curl_easy_init();
+    if (curl) {
+        std::string response;
+        curl_easy_setopt(curl, CURLOPT_URL, url);
+        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
+        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+        CURLcode res = curl_easy_perform(curl);
+        if (res == CURLE_OK) {
+            Request req;
+            req.name = "Request " + std::to_string(requests.size() + 1);
+            req.url = url;
+            req.response = response;
+            requests.push_back(req);
+            strncpy(responseBuffer, response.c_str(), sizeof(responseBuffer));
+        }
+
+        curl_easy_cleanup(curl);
+    }
+}
+
+int main() {
+    std::cout << "Starting application..." << std::endl;
+
+    if (!glfwInit()) {
+        std::cerr << "Failed to initialize GLFW" << std::endl;
+        return -1;
+    }
+
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MAJOR, 3);
+    glfwWindowHint(GLFW_CONTEXT_VERSION_MINOR, 3);
+    glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
+    glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
+
+    GLFWwindow* window = glfwCreateWindow(1280, 720, "API Client", NULL, NULL);
+    if (!window) {
+        std::cerr << "Failed to create GLFW window" << std::endl;
+        glfwTerminate();
+        return -1;
+    }
+
+    glfwMakeContextCurrent(window);
+    glfwSwapInterval(1);
+
+    std::cout << "GLFW window created successfully" << std::endl;
+
+    IMGUI_CHECKVERSION();
+    ImGui::CreateContext();
+    ImGuiIO& io = ImGui::GetIO(); (void)io;
+    ImGui::StyleColorsDark();
+
+    ImGui_ImplGlfw_InitForOpenGL(window, true);
+    ImGui_ImplOpenGL3_Init("#version 330");
+
+    std::cout << "ImGui initialized" << std::endl;
+
+    glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+
+    while (!glfwWindowShouldClose(window)) {
+        glfwPollEvents();
+
+        ImGui_ImplOpenGL3_NewFrame();
+        ImGui_ImplGlfw_NewFrame();
+        ImGui::NewFrame();
+
+        // Set initial window positions and sizes
+        ImGui::SetNextWindowPos(ImVec2(0, 0), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(300, 720), ImGuiCond_FirstUseEver);
+
+        // Left panel - Request History
+        ImGui::Begin("Requests", nullptr, ImGuiWindowFlags_NoMove);
+        if (ImGui::TreeNode("History")) {
+            for (const auto& req : requests) {
+                if (ImGui::TreeNode(req.name.c_str())) {
+                    ImGui::Text("URL: %s", req.url.c_str());
+                    ImGui::TreePop();
+                }
+            }
+            ImGui::TreePop();
+        }
+        ImGui::End();
+
+        // Middle panel
+        ImGui::SetNextWindowPos(ImVec2(300, 0), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(480, 720), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Request", nullptr, ImGuiWindowFlags_NoMove);
+        ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
+        if (ImGui::Button("Send Request")) {
+            makeRequest(urlBuffer);
+        }
+        ImGui::End();
+
+        // Right panel
+        ImGui::SetNextWindowPos(ImVec2(780, 0), ImGuiCond_FirstUseEver);
+        ImGui::SetNextWindowSize(ImVec2(500, 720), ImGuiCond_FirstUseEver);
+        ImGui::Begin("Response", nullptr, ImGuiWindowFlags_NoMove);
+        ImGui::InputTextMultiline("##response", responseBuffer, sizeof(responseBuffer),
+            ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+        ImGui::End();
+
+        ImGui::Render();
+
+        int display_w, display_h;
+        glfwGetFramebufferSize(window, &display_w, &display_h);
+        glViewport(0, 0, display_w, display_h);
+        glClear(GL_COLOR_BUFFER_BIT);
+
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+        glfwSwapBuffers(window);
+    }
+
+    ImGui_ImplOpenGL3_Shutdown();
+    ImGui_ImplGlfw_Shutdown();
+    ImGui::DestroyContext();
+
+    glfwDestroyWindow(window);
+    glfwTerminate();
+
+    return 0;
+}
