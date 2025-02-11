@@ -21,12 +21,18 @@ struct Request {
     std::string response;
     HttpMethod method = HttpMethod::GET;
     bool open = true;
+    std::map<std::string, std::string> queryParams;
+    std::map<std::string, std::string> headers;
+    std::string body;
 };
 
 static std::vector<std::shared_ptr<Request>> requests;
 static int selectedRequest = -1;
 static char urlBuffer[1024] = "";
 static char responseBuffer[16384] = "";
+static char queryParamsBuffer[1024] = "";
+static char headersBuffer[1024] = "";
+static char bodyBuffer[4096] = "";
 
 const std::map<HttpMethod, ImVec4> methodColors = {
     {HttpMethod::GET, ImVec4(0.0f, 0.8f, 0.0f, 1.0f)},
@@ -56,22 +62,49 @@ void makeRequest(const char* url, Request* req) {
     CURL* curl = curl_easy_init();
     if (curl) {
         std::string response;
-        curl_easy_setopt(curl, CURLOPT_URL, url);
+        std::string fullUrl = url;
+
+        if (!req->queryParams.empty()) {
+            fullUrl += "?";
+            for (const auto& [key, value] : req->queryParams) {
+                fullUrl += key + "=" + value + "&";
+            }
+            fullUrl.pop_back();
+        }
+
+        curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
         curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
         curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+
+        // Set headers
+        struct curl_slist* headers = NULL;
+        for (const auto& [key, value] : req->headers) {
+            std::string header = key + ": " + value;
+            headers = curl_slist_append(headers, header.c_str());
+        }
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
 
         switch (req->method) {
             case HttpMethod::POST:
                 curl_easy_setopt(curl, CURLOPT_POST, 1L);
+                if (!req->body.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
+                }
                 break;
             case HttpMethod::PUT:
                 curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
+                if (!req->body.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
+                }
                 break;
             case HttpMethod::DELETE:
                 curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
                 break;
             case HttpMethod::PATCH:
                 curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
+                if (!req->body.empty()) {
+                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
+                }
                 break;
             default:
                 curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
@@ -83,7 +116,57 @@ void makeRequest(const char* url, Request* req) {
             strncpy(responseBuffer, response.c_str(), sizeof(responseBuffer));
         }
 
+        if (headers) {
+            curl_slist_free_all(headers);
+        }
+
         curl_easy_cleanup(curl);
+    }
+}
+
+void renderKeyValueEditor(const std::string& title, std::map<std::string, std::string>& keyValuePairs) {
+    if (ImGui::CollapsingHeader(title.c_str())) {
+        ImGui::PushID(title.c_str());
+
+        static char newKey[128] = "";
+        static char newValue[128] = "";
+        ImGui::InputText("Key", newKey, sizeof(newKey));
+        ImGui::SameLine();
+        ImGui::InputText("Value", newValue, sizeof(newValue));
+        ImGui::SameLine();
+        if (ImGui::Button("Add")) {
+            if (strlen(newKey)) {
+                keyValuePairs[newKey] = newValue;
+                newKey[0] = '\0';
+                newValue[0] = '\0';
+            }
+        }
+
+        for (auto it = keyValuePairs.begin(); it != keyValuePairs.end();) {
+            ImGui::PushID(it->first.c_str());
+
+            char keyBuffer[128];
+            char valueBuffer[128];
+            strncpy(keyBuffer, it->first.c_str(), sizeof(keyBuffer));
+            strncpy(valueBuffer, it->second.c_str(), sizeof(valueBuffer));
+
+            ImGui::InputText("##Key", keyBuffer, sizeof(keyBuffer));
+            ImGui::SameLine();
+            ImGui::InputText("##Value", valueBuffer, sizeof(valueBuffer));
+            ImGui::SameLine();
+            if (ImGui::Button("Delete")) {
+                it = keyValuePairs.erase(it);
+            } else {
+                auto nodeHandle = keyValuePairs.extract(it++);
+                nodeHandle.key() = keyBuffer;
+                nodeHandle.mapped() = valueBuffer;
+                keyValuePairs.insert(std::move(nodeHandle));
+            }
+
+            ImGui::PopID();
+        }
+
+        ImGui::PopID();
     }
 }
 
@@ -101,12 +184,24 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
     ImGui::SameLine();
     ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
 
-    if (ImGui::Button("Send Request")) {
-        makeRequest(urlBuffer, req.get());
+    renderKeyValueEditor("Query Parameters", req->queryParams);
+    renderKeyValueEditor("Headers", req->headers);
+
+    if (ImGui::CollapsingHeader("Body")) {
+        ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 6));
+        req->body = bodyBuffer;
     }
 
-    ImGui::InputTextMultiline("Response", responseBuffer, sizeof(responseBuffer),
-        ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+    if (ImGui::Button("Send Request")) {
+        req->url = urlBuffer;
+        makeRequest(req->url.c_str(), req.get());
+    }
+
+    ImGui::Separator();
+
+    if (ImGui::CollapsingHeader("Response")) {
+        ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer), ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+    }
 
     ImGui::PopID();
 }
@@ -123,6 +218,22 @@ void renderRequestList() {
         if (ImGui::Selectable(label.c_str(), selectedRequest == i)) {
             selectedRequest = i;
             req->open = true;
+            strncpy(urlBuffer, req->url.c_str(), sizeof(urlBuffer));
+            std::string queryParamsStr;
+            for (const auto& [key, value] : req->queryParams) {
+                queryParamsStr += key + "=" + value + "&";
+            }
+            if (!queryParamsStr.empty()) {
+                queryParamsStr.pop_back();
+            }
+            strncpy(queryParamsBuffer, queryParamsStr.c_str(), sizeof(queryParamsBuffer));
+            std::string headersStr;
+            for (const auto& [key, value] : req->headers) {
+                headersStr += key + ": " + value + "\n";
+            }
+            strncpy(headersBuffer, headersStr.c_str(), sizeof(headersBuffer));
+            strncpy(bodyBuffer, req->body.c_str(), sizeof(bodyBuffer));
+            strncpy(responseBuffer, req->response.c_str(), sizeof(responseBuffer));
         }
 
         ImGui::PopStyleColor();
