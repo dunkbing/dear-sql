@@ -124,43 +124,83 @@ void makeRequest(const char* url, Request* req) {
     }
 }
 
+struct KeyValueEditor {
+    char newKey[128] = "";
+    char newValue[128] = "";
+    std::map<std::string, std::pair<char[128], char[128]>> buffers;
+};
+
+static std::map<std::string, KeyValueEditor> editors;
+
 void renderKeyValueEditor(const std::string& title, std::map<std::string, std::string>& keyValuePairs) {
     if (ImGui::CollapsingHeader(title.c_str())) {
         ImGui::PushID(title.c_str());
 
-        static char newKey[128] = "";
-        static char newValue[128] = "";
-        ImGui::InputText("Key", newKey, sizeof(newKey));
+        auto& editor = editors[title];
+
+        // Add new key-value pair
+        ImGui::InputText("Key", editor.newKey, sizeof(editor.newKey));
         ImGui::SameLine();
-        ImGui::InputText("Value", newValue, sizeof(newValue));
+        ImGui::InputText("Value", editor.newValue, sizeof(editor.newValue));
         ImGui::SameLine();
         if (ImGui::Button("Add")) {
-            if (strlen(newKey)) {
-                keyValuePairs[newKey] = newValue;
-                newKey[0] = '\0';
-                newValue[0] = '\0';
+            if (strlen(editor.newKey) > 0) {
+                keyValuePairs[editor.newKey] = editor.newValue;
+                editor.newKey[0] = '\0';
+                editor.newValue[0] = '\0';
+            }
+        }
+
+        // Remove old buffers for deleted key-value pairs
+        for (auto it = editor.buffers.begin(); it != editor.buffers.end();) {
+            if (keyValuePairs.find(it->first) == keyValuePairs.end()) {
+                it = editor.buffers.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        // Create or update buffers for existing key-value pairs
+        for (const auto& [key, value] : keyValuePairs) {
+            if (editor.buffers.find(key) == editor.buffers.end()) {
+                auto& [keyBuf, valueBuf] = editor.buffers[key];
+                strncpy(keyBuf, key.c_str(), sizeof(keyBuf));
+                strncpy(valueBuf, value.c_str(), sizeof(valueBuf));
             }
         }
 
         for (auto it = keyValuePairs.begin(); it != keyValuePairs.end();) {
-            ImGui::PushID(it->first.c_str());
+            const std::string& currentKey = it->first;
+            ImGui::PushID(currentKey.c_str());
 
-            char keyBuffer[128];
-            char valueBuffer[128];
-            strncpy(keyBuffer, it->first.c_str(), sizeof(keyBuffer));
-            strncpy(valueBuffer, it->second.c_str(), sizeof(valueBuffer));
+            auto& [keyBuf, valueBuf] = editor.buffers[currentKey];
 
-            ImGui::InputText("##Key", keyBuffer, sizeof(keyBuffer));
+            bool modified = false;
+            modified |= ImGui::InputText("##Key", keyBuf, sizeof(keyBuf));
             ImGui::SameLine();
-            ImGui::InputText("##Value", valueBuffer, sizeof(valueBuffer));
+            modified |= ImGui::InputText("##Value", valueBuf, sizeof(valueBuf));
             ImGui::SameLine();
+
             if (ImGui::Button("Delete")) {
                 it = keyValuePairs.erase(it);
             } else {
-                auto nodeHandle = keyValuePairs.extract(it++);
-                nodeHandle.key() = keyBuffer;
-                nodeHandle.mapped() = valueBuffer;
-                keyValuePairs.insert(std::move(nodeHandle));
+                if (modified) {
+                    std::string newKey = keyBuf;
+                    std::string newValue = valueBuf;
+
+                    if (newKey != currentKey) {
+                        // Key changed, remove old and add new
+                        it = keyValuePairs.erase(it);
+                        keyValuePairs[newKey] = newValue;
+                        editor.buffers.erase(currentKey);
+                    } else {
+                        // Only value changed
+                        it->second = newValue;
+                        ++it;
+                    }
+                } else {
+                    ++it;
+                }
             }
 
             ImGui::PopID();
