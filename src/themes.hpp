@@ -95,15 +95,15 @@ namespace Theme {
         ImGuiStyle& style = ImGui::GetStyle();
 
         // Window styling
-        style.WindowPadding = ImVec2(8.0f, 8.0f);
-        style.FramePadding = ImVec2(5.0f, 2.0f);
-        style.CellPadding = ImVec2(6.0f, 6.0f);
-        style.ItemSpacing = ImVec2(6.0f, 6.0f);
-        style.ItemInnerSpacing = ImVec2(6.0f, 6.0f);
-        style.TouchExtraPadding = ImVec2(0.0f, 0.0f);
-        style.IndentSpacing = 21.0f;
-        style.ScrollbarSize = 14.0f;
-        style.GrabMinSize = 10.0f;
+        style.WindowPadding = ImVec2(12.0f, 12.0f);        // Padding within windows
+        style.FramePadding = ImVec2(8.0f, 4.0f);          // Padding within frames (buttons, etc)
+        style.CellPadding = ImVec2(8.0f, 8.0f);           // Padding within cells (tables)
+        style.ItemSpacing = ImVec2(10.0f, 10.0f);         // Spacing between widgets/lines
+        style.ItemInnerSpacing = ImVec2(8.0f, 8.0f);      // Spacing between elements of a composed widget
+        style.TouchExtraPadding = ImVec2(2.0f, 2.0f);     // Expand reactive bounding box
+        style.IndentSpacing = 24.0f;                       // Horizontal spacing when e.g. entering a tree node
+        style.ScrollbarSize = 18.0f;                       // Width of the scrollbar
+        style.GrabMinSize = 14.0f;
 
         // Border styling
         style.WindowBorderSize = 1.0f;
