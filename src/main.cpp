@@ -238,6 +238,7 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
 
     ImGui::Separator();
 
+    ImGui::BeginChild("TopPanel", ImVec2(-1.0f, ImGui::GetContentRegionAvail().y * 0.6f), true);
     if (ImGui::BeginTabBar("RequestDetailsTabs")) {
         if (ImGui::BeginTabItem("Query Params")) {
             renderKeyValueEditor("Query Parameters", req->queryParams);
@@ -248,19 +249,22 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("Body")) {
-            ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer), 
-                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 8));
+            ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer),
+                ImVec2(-1.0f, -1.0f));
             req->body = bodyBuffer;
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Response")) {
-            ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer), 
-                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 12), 
-                ImGuiInputTextFlags_ReadOnly);
             ImGui::EndTabItem();
         }
         ImGui::EndTabBar();
     }
+    ImGui::EndChild();
+
+    ImGui::BeginChild("ResponsePanel", ImVec2(-1.0f, -1.0f), true);
+    if (ImGui::CollapsingHeader("Response", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer),
+            ImVec2(-1.0f, -1.0f),
+            ImGuiInputTextFlags_ReadOnly);
+    }
+    ImGui::EndChild();
 
     ImGui::PopID();
 }
