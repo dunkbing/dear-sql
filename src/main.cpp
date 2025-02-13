@@ -5,6 +5,7 @@
 #include <nlohmann/json.hpp>
 #include <GLFW/glfw3.h>
 #include <vector>
+#include <array>
 #include <iostream>
 
 enum class HttpMethod {
@@ -124,86 +125,100 @@ void makeRequest(const char* url, Request* req) {
     }
 }
 
+struct KeyValuePair {
+    bool enabled = true;
+    std::array<char, 128> key{};
+    std::array<char, 128> value{};
+};
+
 struct KeyValueEditor {
-    char newKey[128] = "";
-    char newValue[128] = "";
-    std::map<std::string, std::pair<char[128], char[128]>> buffers;
+    std::vector<KeyValuePair> buffers;
+
+    KeyValueEditor() {
+        KeyValuePair empty{};
+        buffers.push_back(empty);
+    }
 };
 
 static std::map<std::string, KeyValueEditor> editors;
 
 void renderKeyValueEditor(const std::string& title, std::map<std::string, std::string>& keyValuePairs) {
+    auto& editor = editors[title];
+
     if (ImGui::CollapsingHeader(title.c_str())) {
         ImGui::PushID(title.c_str());
 
-        auto& editor = editors[title];
+        // Calculate widths
+        float availWidth = ImGui::GetContentRegionAvail().x;
+        float checkboxWidth = ImGui::GetFrameHeight();  // Checkbox is square
+        float deleteButtonWidth = 60.0f;
+        float spacing = ImGui::GetStyle().ItemSpacing.x;
+        float inputWidth = (availWidth - checkboxWidth - deleteButtonWidth - spacing * 3) / 2.0f;
 
-        // Add new key-value pair
-        ImGui::InputText("Key", editor.newKey, sizeof(editor.newKey));
-        ImGui::SameLine();
-        ImGui::InputText("Value", editor.newValue, sizeof(editor.newValue));
-        ImGui::SameLine();
-        if (ImGui::Button("Add")) {
-            if (strlen(editor.newKey) > 0) {
-                keyValuePairs[editor.newKey] = editor.newValue;
-                editor.newKey[0] = '\0';
-                editor.newValue[0] = '\0';
-            }
-        }
+        bool needNewEditor = false;
 
-        // Remove old buffers for deleted key-value pairs
-        for (auto it = editor.buffers.begin(); it != editor.buffers.end();) {
-            if (keyValuePairs.find(it->first) == keyValuePairs.end()) {
-                it = editor.buffers.erase(it);
-            } else {
-                ++it;
-            }
-        }
+        // Render editors
+        for (size_t i = 0; i < editor.buffers.size(); i++) {
+            ImGui::PushID(static_cast<int>(i));
+            auto& pair = editor.buffers[i];
 
-        // Create or update buffers for existing key-value pairs
-        for (const auto& [key, value] : keyValuePairs) {
-            if (editor.buffers.find(key) == editor.buffers.end()) {
-                auto& [keyBuf, valueBuf] = editor.buffers[key];
-                strncpy(keyBuf, key.c_str(), sizeof(keyBuf));
-                strncpy(valueBuf, value.c_str(), sizeof(valueBuf));
-            }
-        }
+            // Checkbox
+            ImGui::Checkbox("##Enabled", &pair.enabled);
 
-        for (auto it = keyValuePairs.begin(); it != keyValuePairs.end();) {
-            const std::string& currentKey = it->first;
-            ImGui::PushID(currentKey.c_str());
-
-            auto& [keyBuf, valueBuf] = editor.buffers[currentKey];
-
-            bool modified = false;
-            modified |= ImGui::InputText("##Key", keyBuf, sizeof(keyBuf));
-            ImGui::SameLine();
-            modified |= ImGui::InputText("##Value", valueBuf, sizeof(valueBuf));
             ImGui::SameLine();
 
-            if (ImGui::Button("Delete")) {
-                it = keyValuePairs.erase(it);
-            } else {
-                if (modified) {
-                    std::string newKey = keyBuf;
-                    std::string newValue = valueBuf;
+            // Key input
+            ImGui::PushItemWidth(inputWidth);
+            if (ImGui::InputText("##Key", pair.key.data(), pair.key.size(), 
+                               ImGuiInputTextFlags_CharsNoBlank | (pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly))) {
+                if (!pair.enabled && pair.key[0] != '\0') {
+                    pair.enabled = true;
+                }
+            }
+            if (ImGui::IsItemHovered() && pair.key[0] != '\0') {
+                ImGui::SetTooltip("%s", pair.key.data());
+            }
 
-                    if (newKey != currentKey) {
-                        // Key changed, remove old and add new
-                        it = keyValuePairs.erase(it);
-                        keyValuePairs[newKey] = newValue;
-                        editor.buffers.erase(currentKey);
-                    } else {
-                        // Only value changed
-                        it->second = newValue;
-                        ++it;
-                    }
-                } else {
-                    ++it;
+            ImGui::SameLine();
+
+            // Value input
+            ImGui::InputText("##Value", pair.value.data(), pair.value.size(), 
+                           pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly);
+            if (ImGui::IsItemHovered() && pair.value[0] != '\0') {
+                ImGui::SetTooltip("%s", pair.value.data());
+            }
+            ImGui::PopItemWidth();
+
+            // Delete button (only show for non-last entries when there are multiple)
+            if (editor.buffers.size() > 1 && i < editor.buffers.size() - 1) {
+                ImGui::SameLine();
+                if (ImGui::Button("Delete", ImVec2(deleteButtonWidth, 0))) {
+                    editor.buffers.erase(editor.buffers.begin() + i);
+                    ImGui::PopID();
+                    break;
                 }
             }
 
+            // Check if we need a new editor
+            if (i == editor.buffers.size() - 1 && (pair.key[0] != '\0' || pair.value[0] != '\0')) {
+                needNewEditor = true;
+            }
+
             ImGui::PopID();
+        }
+
+        // Add new editor if needed
+        if (needNewEditor) {
+            KeyValuePair empty{};
+            editor.buffers.push_back(empty);
+        }
+
+        // Update key-value pairs map
+        keyValuePairs.clear();
+        for (const auto& pair : editor.buffers) {
+            if (pair.enabled && pair.key[0] != '\0') {  // Only add enabled non-empty keys
+                keyValuePairs[pair.key.data()] = pair.value.data();
+            }
         }
 
         ImGui::PopID();
