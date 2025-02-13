@@ -8,6 +8,9 @@
 #include <array>
 #include <iostream>
 #include <algorithm>
+#include "themes.hpp"
+
+static bool dark_theme = true;
 
 enum class HttpMethod {
     GET,
@@ -36,14 +39,6 @@ static char queryParamsBuffer[1024] = "";
 static char headersBuffer[1024] = "";
 static char bodyBuffer[4096] = "";
 
-const std::map<HttpMethod, ImVec4> methodColors = {
-    {HttpMethod::GET, ImVec4(0.0f, 0.8f, 0.0f, 1.0f)},
-    {HttpMethod::POST, ImVec4(0.8f, 0.4f, 0.0f, 1.0f)},
-    {HttpMethod::PUT, ImVec4(0.0f, 0.4f, 0.8f, 1.0f)},
-    {HttpMethod::DELETE, ImVec4(0.8f, 0.0f, 0.0f, 1.0f)},
-    {HttpMethod::PATCH, ImVec4(0.8f, 0.8f, 0.0f, 1.0f)}
-};
-
 const char* methodToString(HttpMethod method) {
     switch (method) {
         case HttpMethod::GET: return "GET";
@@ -53,6 +48,26 @@ const char* methodToString(HttpMethod method) {
         case HttpMethod::PATCH: return "PATCH";
         default: return "UNKNOWN";
     }
+}
+
+const std::map<HttpMethod, ImVec4>& getMethodColors() {
+    static const std::map<HttpMethod, ImVec4> darkColors = {
+        {HttpMethod::GET, Theme::MOCHA.green},
+        {HttpMethod::POST, Theme::MOCHA.peach},
+        {HttpMethod::PUT, Theme::MOCHA.blue},
+        {HttpMethod::DELETE, Theme::MOCHA.red},
+        {HttpMethod::PATCH, Theme::MOCHA.yellow}
+    };
+
+    static const std::map<HttpMethod, ImVec4> lightColors = {
+        {HttpMethod::GET, Theme::LATTE.green},
+        {HttpMethod::POST, Theme::LATTE.peach},
+        {HttpMethod::PUT, Theme::LATTE.blue},
+        {HttpMethod::DELETE, Theme::LATTE.red},
+        {HttpMethod::PATCH, Theme::LATTE.yellow}
+    };
+
+    return dark_theme ? darkColors : lightColors;
 }
 
 static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
@@ -300,7 +315,7 @@ void renderRequestList() {
         auto& req = requests[i];
 
         // Push method color
-        ImGui::PushStyleColor(ImGuiCol_Text, methodColors.at(req->method));
+        ImGui::PushStyleColor(ImGuiCol_Text, getMethodColors().at(req->method));
 
         std::string label = std::string(methodToString(req->method)) + " " + req->name;
         if (ImGui::Selectable(label.c_str(), selectedRequest == i)) {
@@ -366,13 +381,19 @@ int main() {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
+    Theme::ApplyTheme(Theme::MOCHA);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
 
     std::cout << "ImGui initialized" << std::endl;
 
-    glClearColor(0.45f, 0.55f, 0.60f, 1.00f);
+    glClearColor(
+        dark_theme ? 0.110f : 0.957f,
+        dark_theme ? 0.110f : 0.957f,
+        dark_theme ? 0.137f : 0.957f,
+        1.0f
+    );
 
     while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
@@ -395,6 +416,20 @@ int main() {
             ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
         ImGui::Begin("DockSpace Demo", nullptr, window_flags);
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu("Theme")) {
+                if (ImGui::MenuItem("Dark Theme", nullptr, dark_theme)) {
+                    dark_theme = true;
+                    Theme::ApplyTheme(Theme::MOCHA);
+                }
+                if (ImGui::MenuItem("Light Theme", nullptr, !dark_theme)) {
+                    dark_theme = false;
+                    Theme::ApplyTheme(Theme::LATTE);
+                }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
         ImGui::PopStyleVar(3);
 
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
