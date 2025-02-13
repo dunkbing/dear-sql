@@ -129,6 +129,11 @@ struct KeyValuePair {
     bool enabled = true;
     std::array<char, 128> key{};
     std::array<char, 128> value{};
+
+    KeyValuePair() {
+        key.fill('\0');
+        value.fill('\0');
+    }
 };
 
 struct KeyValueEditor {
@@ -144,85 +149,72 @@ static std::map<std::string, KeyValueEditor> editors;
 
 void renderKeyValueEditor(const std::string& title, std::map<std::string, std::string>& keyValuePairs) {
     auto& editor = editors[title];
+    ImGui::PushID(title.c_str());
 
-    if (ImGui::CollapsingHeader(title.c_str())) {
-        ImGui::PushID(title.c_str());
+    float availWidth = ImGui::GetContentRegionAvail().x;
+    float checkboxWidth = ImGui::GetFrameHeight();
+    float deleteButtonWidth = 60.0f;
+    float spacing = ImGui::GetStyle().ItemSpacing.x;
+    float inputWidth = (availWidth - checkboxWidth - deleteButtonWidth - spacing * 3) / 2.0f;
 
-        // Calculate widths
-        float availWidth = ImGui::GetContentRegionAvail().x;
-        float checkboxWidth = ImGui::GetFrameHeight();  // Checkbox is square
-        float deleteButtonWidth = 60.0f;
-        float spacing = ImGui::GetStyle().ItemSpacing.x;
-        float inputWidth = (availWidth - checkboxWidth - deleteButtonWidth - spacing * 3) / 2.0f;
+    bool needNewEditor = false;
 
-        bool needNewEditor = false;
+    for (size_t i = 0; i < editor.buffers.size(); i++) {
+        ImGui::PushID(static_cast<int>(i));
+        auto& pair = editor.buffers[i];
 
-        // Render editors
-        for (size_t i = 0; i < editor.buffers.size(); i++) {
-            ImGui::PushID(static_cast<int>(i));
-            auto& pair = editor.buffers[i];
+        ImGui::Checkbox("##Enabled", &pair.enabled);
+        ImGui::SameLine();
 
-            // Checkbox
-            ImGui::Checkbox("##Enabled", &pair.enabled);
-
-            ImGui::SameLine();
-
-            // Key input
-            ImGui::PushItemWidth(inputWidth);
-            if (ImGui::InputText("##Key", pair.key.data(), pair.key.size(), 
-                               ImGuiInputTextFlags_CharsNoBlank | (pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly))) {
-                if (!pair.enabled && pair.key[0] != '\0') {
-                    pair.enabled = true;
-                }
+        ImGui::PushItemWidth(inputWidth);
+        if (ImGui::InputText("##Key", pair.key.data(), pair.key.size() - 1,
+                           ImGuiInputTextFlags_CharsNoBlank | (pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly))) {
+            if (!pair.enabled && pair.key[0] != '\0') {
+                pair.enabled = true;
             }
-            if (ImGui::IsItemHovered() && pair.key[0] != '\0') {
-                ImGui::SetTooltip("%s", pair.key.data());
-            }
-
-            ImGui::SameLine();
-
-            // Value input
-            ImGui::InputText("##Value", pair.value.data(), pair.value.size(), 
-                           pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly);
-            if (ImGui::IsItemHovered() && pair.value[0] != '\0') {
-                ImGui::SetTooltip("%s", pair.value.data());
-            }
-            ImGui::PopItemWidth();
-
-            // Delete button (only show for non-last entries when there are multiple)
-            if (editor.buffers.size() > 1 && i < editor.buffers.size() - 1) {
-                ImGui::SameLine();
-                if (ImGui::Button("Delete", ImVec2(deleteButtonWidth, 0))) {
-                    editor.buffers.erase(editor.buffers.begin() + i);
-                    ImGui::PopID();
-                    break;
-                }
-            }
-
-            // Check if we need a new editor
-            if (i == editor.buffers.size() - 1 && (pair.key[0] != '\0' || pair.value[0] != '\0')) {
-                needNewEditor = true;
-            }
-
-            ImGui::PopID();
+        }
+        if (ImGui::IsItemHovered() && pair.key[0] != '\0') {
+            ImGui::SetTooltip("%s", pair.key.data());
         }
 
-        // Add new editor if needed
-        if (needNewEditor) {
-            KeyValuePair empty{};
-            editor.buffers.push_back(empty);
+        ImGui::SameLine();
+
+        // Use size-1 for buffer size to ensure space for null terminator
+        ImGui::InputText("##Value", pair.value.data(), pair.value.size() - 1,
+                       pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly);
+        if (ImGui::IsItemHovered() && pair.value[0] != '\0') {
+            ImGui::SetTooltip("%s", pair.value.data());
+        }
+        ImGui::PopItemWidth();
+
+        if (editor.buffers.size() > 1 && i < editor.buffers.size() - 1) {
+            ImGui::SameLine();
+            if (ImGui::Button("Delete", ImVec2(deleteButtonWidth, 0))) {
+                editor.buffers.erase(editor.buffers.begin() + i);
+                ImGui::PopID();
+                break;
+            }
         }
 
-        // Update key-value pairs map
-        keyValuePairs.clear();
-        for (const auto& pair : editor.buffers) {
-            if (pair.enabled && pair.key[0] != '\0') {  // Only add enabled non-empty keys
-                keyValuePairs[pair.key.data()] = pair.value.data();
-            }
+        if (i == editor.buffers.size() - 1 && (pair.key[0] != '\0' || pair.value[0] != '\0')) {
+            needNewEditor = true;
         }
 
         ImGui::PopID();
     }
+
+    if (needNewEditor) {
+        editor.buffers.push_back(KeyValuePair{});
+    }
+
+    keyValuePairs.clear();
+    for (const auto& pair : editor.buffers) {
+        if (pair.enabled && pair.key[0] != '\0') {
+            keyValuePairs[pair.key.data()] = pair.value.data();
+        }
+    }
+
+    ImGui::PopID();
 }
 
 void renderRequestPanel(std::shared_ptr<Request>& req) {
@@ -239,14 +231,6 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
     ImGui::SameLine();
     ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
 
-    renderKeyValueEditor("Query Parameters", req->queryParams);
-    renderKeyValueEditor("Headers", req->headers);
-
-    if (ImGui::CollapsingHeader("Body")) {
-        ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer), ImVec2(-1.0f, ImGui::GetTextLineHeight() * 6));
-        req->body = bodyBuffer;
-    }
-
     if (ImGui::Button("Send Request")) {
         req->url = urlBuffer;
         makeRequest(req->url.c_str(), req.get());
@@ -254,8 +238,28 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
 
     ImGui::Separator();
 
-    if (ImGui::CollapsingHeader("Response")) {
-        ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer), ImVec2(-1.0f, -1.0f), ImGuiInputTextFlags_ReadOnly);
+    if (ImGui::BeginTabBar("RequestDetailsTabs")) {
+        if (ImGui::BeginTabItem("Query Params")) {
+            renderKeyValueEditor("Query Parameters", req->queryParams);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Headers")) {
+            renderKeyValueEditor("Headers", req->headers);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Body")) {
+            ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer), 
+                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 8));
+            req->body = bodyBuffer;
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Response")) {
+            ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer), 
+                ImVec2(-1.0f, ImGui::GetTextLineHeight() * 12), 
+                ImGuiInputTextFlags_ReadOnly);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
     }
 
     ImGui::PopID();
