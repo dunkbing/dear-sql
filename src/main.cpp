@@ -224,7 +224,7 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
     const char* methods[] = {"GET", "POST", "PUT", "DELETE", "PATCH"};
     int currentMethod = static_cast<int>(req->method);
     ImGui::PushItemWidth(100);
-    if (ImGui::Combo("Method", &currentMethod, methods, IM_ARRAYSIZE(methods))) {
+    if (ImGui::Combo("##Method", &currentMethod, methods, IM_ARRAYSIZE(methods))) {
         req->method = static_cast<HttpMethod>(currentMethod);
     }
     ImGui::PopItemWidth();
