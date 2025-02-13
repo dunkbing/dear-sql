@@ -7,6 +7,7 @@
 #include <vector>
 #include <array>
 #include <iostream>
+#include <algorithm>
 
 enum class HttpMethod {
     GET,
@@ -238,7 +239,11 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
 
     ImGui::Separator();
 
-    ImGui::BeginChild("TopPanel", ImVec2(-1.0f, ImGui::GetContentRegionAvail().y * 0.6f), true);
+    // Add static variable for panel height
+    static float topPanelHeight = ImGui::GetContentRegionAvail().y * 0.4f;
+
+    // Create top panel for request details
+    ImGui::BeginChild("TopPanel", ImVec2(-1.0f, topPanelHeight), true);
     if (ImGui::BeginTabBar("RequestDetailsTabs")) {
         if (ImGui::BeginTabItem("Query Params")) {
             renderKeyValueEditor("Query Parameters", req->queryParams);
@@ -258,6 +263,26 @@ void renderRequestPanel(std::shared_ptr<Request>& req) {
     }
     ImGui::EndChild();
 
+    // splitter
+    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.7f, 0.7f, 0.3f));
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.9f, 0.9f, 0.3f));
+    ImGui::Button("##splitter", ImVec2(-1, 4.0f));
+    if (ImGui::IsItemActive()) {
+        float mouseDelta = ImGui::GetIO().MouseDelta.y;
+        if (mouseDelta != 0.0f) {
+            topPanelHeight += mouseDelta;
+            // Add minimum and maximum constraints
+            float minHeight = 100.0f;
+            float maxHeight = ImGui::GetContentRegionAvail().y - 100.0f;
+            topPanelHeight = std::clamp(topPanelHeight, minHeight, maxHeight);
+        }
+    }
+    if (ImGui::IsItemHovered())
+        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
+    ImGui::PopStyleColor(3);
+
+    // Response panel below
     ImGui::BeginChild("ResponsePanel", ImVec2(-1.0f, -1.0f), true);
     if (ImGui::CollapsingHeader("Response", ImGuiTreeNodeFlags_DefaultOpen)) {
         ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer),
