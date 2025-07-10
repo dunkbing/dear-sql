@@ -46,6 +46,7 @@ struct Database
     std::vector<Table> tables;
     bool expanded = false;
     bool connected = false;
+    bool tablesLoaded = false; // Flag to prevent infinite refresh
 };
 
 struct Tab
@@ -53,6 +54,7 @@ struct Tab
     std::string name;
     TabType type;
     bool open = true;
+    bool shouldFocus = false; // Flag to indicate this tab should be focused
 
     // SQL Editor specific
     std::string sqlQuery;
@@ -77,6 +79,7 @@ static int selectedTable = -1;
 static char sqlBuffer[4096] = "";
 static char queryResultBuffer[16384] = "";
 static bool dockingLayoutInitialized = false;
+static std::shared_ptr<Tab> activeTab = nullptr;
 
 // SQLite helper functions
 bool connectToDatabase(Database &db)
@@ -86,6 +89,7 @@ bool connectToDatabase(Database &db)
         return true;
     }
 
+    // std::cout << "Attempting to connect to database: " << db.path << std::endl;
     int rc = sqlite3_open(db.path.c_str(), &db.connection);
     if (rc != SQLITE_OK)
     {
@@ -93,6 +97,7 @@ bool connectToDatabase(Database &db)
         return false;
     }
 
+    std::cout << "Successfully connected to database: " << db.path << std::endl;
     db.connected = true;
     return true;
 }
@@ -110,21 +115,29 @@ void disconnectDatabase(Database &db)
 std::vector<std::string> getTableNames(sqlite3 *db)
 {
     std::vector<std::string> tables;
-    const char *sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;";
+    const char *sql = "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;";
     sqlite3_stmt *stmt;
 
-    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK)
+    std::cout << "Executing query to get table names..." << std::endl;
+    int rc = sqlite3_prepare_v2(db, sql, -1, &stmt, NULL);
+    if (rc == SQLITE_OK)
     {
         while (sqlite3_step(stmt) == SQLITE_ROW)
         {
             const char *tableName = (const char *)sqlite3_column_text(stmt, 0);
             if (tableName)
             {
+                std::cout << "Found table: " << tableName << std::endl;
                 tables.push_back(std::string(tableName));
             }
         }
     }
+    else
+    {
+        std::cerr << "Failed to prepare SQL statement: " << sqlite3_errmsg(db) << std::endl;
+    }
     sqlite3_finalize(stmt);
+    std::cout << "Query completed. Found " << tables.size() << " tables." << std::endl;
     return tables;
 }
 
@@ -152,19 +165,28 @@ std::vector<Column> getTableColumns(sqlite3 *db, const std::string &tableName)
 
 void refreshDatabaseTables(Database &db)
 {
+    std::cout << "Refreshing tables for database: " << db.name << std::endl;
     if (!connectToDatabase(db))
+    {
+        std::cout << "Failed to connect to database" << std::endl;
+        db.tablesLoaded = true; // Mark as loaded even if failed to prevent retry
         return;
+    }
 
     db.tables.clear();
     std::vector<std::string> tableNames = getTableNames(db.connection);
+    std::cout << "Found " << tableNames.size() << " tables" << std::endl;
 
     for (const auto &tableName : tableNames)
     {
+        std::cout << "Adding table: " << tableName << std::endl;
         Table table;
         table.name = tableName;
         table.columns = getTableColumns(db.connection, tableName);
         db.tables.push_back(table);
     }
+    std::cout << "Finished refreshing tables. Total tables: " << db.tables.size() << std::endl;
+    db.tablesLoaded = true; // Mark as loaded to prevent infinite refresh
 }
 
 std::string executeQuery(sqlite3 *db, const std::string &query)
@@ -296,6 +318,44 @@ void loadTableData(Tab &tab)
     sqlite3_finalize(dataStmt);
 }
 
+// Helper function to find existing table viewer tab
+std::shared_ptr<Tab> findTableTab(const std::string &databasePath, const std::string &tableName)
+{
+    for (auto &tab : tabs)
+    {
+        if (tab->type == TabType::TABLE_VIEWER &&
+            tab->databasePath == databasePath &&
+            tab->tableName == tableName)
+        {
+            return tab;
+        }
+    }
+    return nullptr;
+}
+
+// Helper function to open or focus table tab
+void openTableTab(const std::string &databasePath, const std::string &tableName)
+{
+    // Check if tab already exists
+    auto existingTab = findTableTab(databasePath, tableName);
+    if (existingTab)
+    {
+        // Tab already exists, mark it to be focused
+        existingTab->shouldFocus = true;
+        std::cout << "Table " << tableName << " is already open, focusing existing tab" << std::endl;
+        return;
+    }
+
+    // Create new tab
+    auto tab = std::make_shared<Tab>(tableName, TabType::TABLE_VIEWER);
+    tab->databasePath = databasePath;
+    tab->tableName = tableName;
+    tab->shouldFocus = true; // Mark new tab to be focused
+    loadTableData(*tab);
+    tabs.push_back(tab);
+    std::cout << "Created new tab for table: " << tableName << std::endl;
+}
+
 void setupDefaultDockingLayout(ImGuiID dockspace_id)
 {
     if (dockingLayoutInitialized)
@@ -336,6 +396,7 @@ void openDatabaseFileDialog()
         if (connectToDatabase(*db))
         {
             refreshDatabaseTables(*db);
+            std::cout << "Adding database to list. Tables loaded: " << db->tables.size() << std::endl;
             databases.push_back(db);
         }
         else
@@ -384,7 +445,18 @@ void renderDatabaseSidebar()
         {
             selectedDatabase = i;
             selectedTable = -1;
+        }
+
+        // Load tables when the tree node is opened (expanded) and tables haven't been loaded yet
+        if (dbOpen && !db->tablesLoaded)
+        {
+            std::cout << "Database expanded and tables not loaded yet, attempting to load..." << std::endl;
             if (!db->connected)
+            {
+                std::cout << "Database not connected, attempting to connect..." << std::endl;
+                connectToDatabase(*db);
+            }
+            if (db->connected)
             {
                 refreshDatabaseTables(*db);
             }
@@ -395,6 +467,7 @@ void renderDatabaseSidebar()
         {
             if (ImGui::MenuItem("Refresh"))
             {
+                db->tablesLoaded = false; // Reset flag to allow refresh
                 refreshDatabaseTables(*db);
             }
             if (ImGui::MenuItem("New SQL Editor"))
@@ -412,50 +485,49 @@ void renderDatabaseSidebar()
         if (dbOpen)
         {
             // Tables
-            for (size_t j = 0; j < db->tables.size(); j++)
+            if (db->tables.empty())
             {
-                auto &table = db->tables[j];
-
-                ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
-                if (selectedDatabase == (int)i && selectedTable == (int)j)
+                ImGui::Text("  No tables found");
+            }
+            else
+            {
+                for (size_t j = 0; j < db->tables.size(); j++)
                 {
-                    tableFlags |= ImGuiTreeNodeFlags_Selected;
-                }
+                    auto &table = db->tables[j];
 
-                ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
-
-                if (ImGui::IsItemClicked())
-                {
-                    selectedDatabase = i;
-                    selectedTable = j;
-                }
-
-                // Double-click to open table viewer
-                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
-                {
-                    auto tab = std::make_shared<Tab>(table.name, TabType::TABLE_VIEWER);
-                    tab->databasePath = db->path;
-                    tab->tableName = table.name;
-                    loadTableData(*tab);
-                    tabs.push_back(tab);
-                }
-
-                // Context menu for table
-                if (ImGui::BeginPopupContextItem())
-                {
-                    if (ImGui::MenuItem("View Data"))
+                    ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                    if (selectedDatabase == (int)i && selectedTable == (int)j)
                     {
-                        auto tab = std::make_shared<Tab>(table.name, TabType::TABLE_VIEWER);
-                        tab->databasePath = db->path;
-                        tab->tableName = table.name;
-                        loadTableData(*tab);
-                        tabs.push_back(tab);
+                        tableFlags |= ImGuiTreeNodeFlags_Selected;
                     }
-                    if (ImGui::MenuItem("Show Structure"))
+
+                    ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
+
+                    if (ImGui::IsItemClicked())
                     {
-                        // TODO: Show table structure in a tab
+                        selectedDatabase = i;
+                        selectedTable = j;
                     }
-                    ImGui::EndPopup();
+
+                    // Double-click to open table viewer
+                    if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                    {
+                        openTableTab(db->path, table.name);
+                    }
+
+                    // Context menu for table
+                    if (ImGui::BeginPopupContextItem())
+                    {
+                        if (ImGui::MenuItem("View Data"))
+                        {
+                            openTableTab(db->path, table.name);
+                        }
+                        if (ImGui::MenuItem("Show Structure"))
+                        {
+                            // TODO: Show table structure in a tab
+                        }
+                        ImGui::EndPopup();
+                    }
                 }
             }
             ImGui::TreePop();
@@ -692,6 +764,7 @@ int main()
                 if (ImGui::MenuItem("New SQL Editor", "Ctrl+N"))
                 {
                     auto tab = std::make_shared<Tab>("SQL Editor " + std::to_string(tabs.size() + 1), TabType::SQL_EDITOR);
+                    tab->shouldFocus = true; // Focus the new SQL editor tab
                     tabs.push_back(tab);
                 }
                 ImGui::Separator();
@@ -751,6 +824,7 @@ int main()
             if (ImGui::Button("Create First SQL Editor", ImVec2(buttonWidth, 0)))
             {
                 auto tab = std::make_shared<Tab>("SQL Editor 1", TabType::SQL_EDITOR);
+                tab->shouldFocus = true; // Focus the first SQL editor tab
                 tabs.push_back(tab);
             }
         }
@@ -761,7 +835,16 @@ int main()
                 for (auto it = tabs.begin(); it != tabs.end();)
                 {
                     auto &tab = *it;
-                    if (tab->open && ImGui::BeginTabItem(tab->name.c_str(), &tab->open))
+
+                    // Handle tab focusing
+                    ImGuiTabItemFlags tabFlags = ImGuiTabItemFlags_None;
+                    if (tab->shouldFocus)
+                    {
+                        tabFlags |= ImGuiTabItemFlags_SetSelected;
+                        tab->shouldFocus = false; // Reset flag after use
+                    }
+
+                    if (tab->open && ImGui::BeginTabItem(tab->name.c_str(), &tab->open, tabFlags))
                     {
                         switch (tab->type)
                         {
