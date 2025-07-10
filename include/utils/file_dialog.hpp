@@ -1,12 +1,11 @@
 #pragma once
 
-#include <string>
 #include <memory>
+#include <string>
 
 class Database;
 
-class FileDialog
-{
+class FileDialog {
 public:
     FileDialog() = default;
     ~FileDialog() = default;

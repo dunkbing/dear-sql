@@ -1,43 +1,39 @@
 #include "application.hpp"
 #include "database/database.hpp"
 #include "tabs/tab_manager.hpp"
+#include "themes.hpp"
 #include "ui/database_sidebar.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
-#include "themes.hpp"
-#include <iostream>
 #include <fstream>
 #include <imgui_internal.h>
+#include "imgui_impl_metal.h"
+#include <iostream>
 
 #ifdef USE_METAL_BACKEND
-    #import <Metal/Metal.h>
-    #import <QuartzCore/QuartzCore.h>
-    #import <Foundation/Foundation.h>
+#import <Foundation/Foundation.h>
+#import <Metal/Metal.h>
+#import <QuartzCore/QuartzCore.h>
 #endif
 
-Application &Application::getInstance()
-{
+Application &Application::getInstance() {
     static Application instance;
     return instance;
 }
 
-bool Application::initialize()
-{
+bool Application::initialize() {
     std::cout << "Starting Dear SQL..." << std::endl;
 
-    if (!initializeGLFW())
-    {
+    if (!initializeGLFW()) {
         return false;
     }
 
-    if (!initializeImGui())
-    {
+    if (!initializeImGui()) {
         return false;
     }
 
     // Initialize NFD
-    if (!FileDialog::initialize())
-    {
+    if (!FileDialog::initialize()) {
         std::cerr << "Failed to initialize Native File Dialog" << std::endl;
         return false;
     }
@@ -47,49 +43,46 @@ bool Application::initialize()
     databaseSidebar = std::make_unique<DatabaseSidebar>();
     fileDialog = std::make_unique<FileDialog>();
 
+#ifdef USE_METAL_BACKEND
     std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
+#else
+    std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
+#endif
     return true;
 }
 
-void Application::run()
-{
+void Application::run() {
 #ifdef USE_OPENGL_BACKEND
-    glClearColor(
-        darkTheme ? 0.110f : 0.957f,
-        darkTheme ? 0.110f : 0.957f,
-        darkTheme ? 0.137f : 0.957f,
-        0.98f);
+    glClearColor(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
+                 darkTheme ? 0.137f : 0.957f, 0.98f);
 #endif
 
-    while (!glfwWindowShouldClose(window))
-    {
+    while (!glfwWindowShouldClose(window)) {
         glfwPollEvents();
 
 #ifdef USE_METAL_BACKEND
         // Get the Metal drawable
-        id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer nextDrawable];
-        if (!drawable)
-        {
+        id<CAMetalDrawable> drawable = [(CAMetalLayer *)metalLayer nextDrawable];
+        if (!drawable) {
             continue;
         }
 
         // Create render pass descriptor
-        MTLRenderPassDescriptor *renderPassDescriptor = [MTLRenderPassDescriptor renderPassDescriptor];
+        MTLRenderPassDescriptor *renderPassDescriptor =
+            [MTLRenderPassDescriptor renderPassDescriptor];
         renderPassDescriptor.colorAttachments[0].texture = drawable.texture;
         renderPassDescriptor.colorAttachments[0].loadAction = MTLLoadActionClear;
-        renderPassDescriptor.colorAttachments[0].clearColor = MTLClearColorMake(
-            darkTheme ? 0.110f : 0.957f,
-            darkTheme ? 0.110f : 0.957f,
-            darkTheme ? 0.137f : 0.957f,
-            1.0f
-        );
+        renderPassDescriptor.colorAttachments[0].clearColor =
+            MTLClearColorMake(darkTheme ? 0.110f : 0.957f, darkTheme ? 0.110f : 0.957f,
+                              darkTheme ? 0.137f : 0.957f, 1.0f);
         renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         // Create command buffer
         id<MTLCommandBuffer> commandBuffer = [(id<MTLCommandQueue>)metalCommandQueue commandBuffer];
 
         // Create render command encoder
-        id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
+        id<MTLRenderCommandEncoder> renderEncoder =
+            [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
 
         ImGui_ImplMetal_NewFrame(renderPassDescriptor);
 #elif defined(USE_OPENGL_BACKEND)
@@ -107,7 +100,7 @@ void Application::run()
 
 #ifdef USE_METAL_BACKEND
         // Update Metal layer drawable size
-        ((CAMetalLayer*)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
+        ((CAMetalLayer *)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
 
         // Render ImGui draw data
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);
@@ -125,11 +118,9 @@ void Application::run()
     }
 }
 
-void Application::cleanup()
-{
+void Application::cleanup() {
     // Cleanup databases
-    for (auto &db : databases)
-    {
+    for (auto &db : databases) {
         db->disconnect();
     }
     databases.clear();
@@ -152,8 +143,7 @@ void Application::cleanup()
     ImGui::DestroyContext();
 
     // Cleanup GLFW
-    if (window)
-    {
+    if (window) {
         glfwDestroyWindow(window);
     }
     glfwTerminate();
@@ -161,21 +151,17 @@ void Application::cleanup()
     std::cout << "Application cleanup completed" << std::endl;
 }
 
-void Application::setDarkTheme(bool dark)
-{
+void Application::setDarkTheme(bool dark) {
     darkTheme = dark;
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
 
-void Application::addDatabase(std::shared_ptr<Database> db)
-{
+void Application::addDatabase(const std::shared_ptr<Database>& db) {
     databases.push_back(db);
 }
 
-bool Application::initializeGLFW()
-{
-    if (!glfwInit())
-    {
+bool Application::initializeGLFW() {
+    if (!glfwInit()) {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return false;
     }
@@ -191,9 +177,8 @@ bool Application::initializeGLFW()
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 #endif
 
-    window = glfwCreateWindow(1280, 720, "Dear SQL", NULL, NULL);
-    if (!window)
-    {
+    window = glfwCreateWindow(1280, 720, "Dear SQL", nullptr, nullptr);
+    if (!window) {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return false;
@@ -202,15 +187,13 @@ bool Application::initializeGLFW()
 #ifdef USE_METAL_BACKEND
     // Initialize Metal device and layer
     metalDevice = MTLCreateSystemDefaultDevice();
-    if (!metalDevice)
-    {
+    if (!metalDevice) {
         std::cerr << "Failed to create Metal device" << std::endl;
         return false;
     }
 
     metalCommandQueue = [(id<MTLDevice>)metalDevice newCommandQueue];
-    if (!metalCommandQueue)
-    {
+    if (!metalCommandQueue) {
         std::cerr << "Failed to create Metal command queue" << std::endl;
         return false;
     }
@@ -234,8 +217,7 @@ bool Application::initializeGLFW()
     return true;
 }
 
-bool Application::initializeImGui()
-{
+bool Application::initializeImGui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
@@ -259,8 +241,7 @@ bool Application::initializeImGui()
     return true;
 }
 
-void Application::setupFonts()
-{
+void Application::setupFonts() {
     ImGuiIO &io = ImGui::GetIO();
 
     // Configure fonts with Japanese support
@@ -271,15 +252,11 @@ void Application::setupFonts()
     std::vector<std::string> fontPaths = {
 // System fonts as fallback
 #ifdef __APPLE__
-        "/System/Library/Fonts/Hiragino Sans GB.ttc",
-        "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/Helvetica.ttc",
-        "/Library/Fonts/Arial Unicode MS.ttf"
+        "/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial Unicode MS.ttf"
 #elif defined(_WIN32)
-        "C:/Windows/Fonts/msgothic.ttc",
-        "C:/Windows/Fonts/meiryo.ttc",
-        "C:/Windows/Fonts/YuGothM.ttc",
-        "C:/Windows/Fonts/arial.ttf"
+        "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/meiryo.ttc",
+        "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/arial.ttf"
 #else
         "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
         "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
@@ -290,45 +267,36 @@ void Application::setupFonts()
     bool fontLoaded = false;
 
     // Try to load the first available font
-    for (const auto &fontPath : fontPaths)
-    {
+    for (const auto &fontPath : fontPaths) {
         std::ifstream fontFile(fontPath);
-        if (fontFile.good())
-        {
+        if (fontFile.good()) {
             fontFile.close();
 
             // Load the font with comprehensive Unicode ranges
             const ImWchar *ranges = nullptr;
 
             // Choose appropriate glyph ranges based on font name
-            if (fontPath.find("CJK") != std::string::npos || fontPath.find("Han") != std::string::npos)
-            {
+            if (fontPath.find("CJK") != std::string::npos ||
+                fontPath.find("Han") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesJapanese(); // Full CJK support
-            }
-            else if (fontPath.find("Cyrillic") != std::string::npos || fontPath.find("NotoSans-Regular") != std::string::npos)
-            {
+            } else if (fontPath.find("Cyrillic") != std::string::npos ||
+                       fontPath.find("NotoSans-Regular") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesCyrillic(); // Cyrillic + Latin
-            }
-            else if (fontPath.find("unifont") != std::string::npos || fontPath.find("Arabic") != std::string::npos)
-            {
+            } else if (fontPath.find("unifont") != std::string::npos ||
+                       fontPath.find("Arabic") != std::string::npos) {
                 ranges = nullptr; // Load all available glyphs for maximum coverage
-            }
-            else
-            {
+            } else {
                 // For general fonts, use Japanese ranges for broad coverage (includes Latin + CJK)
                 ranges = io.Fonts->GetGlyphRangesJapanese();
             }
 
-            ImFont *font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &fontConfig, ranges);
+            ImFont *font =
+                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &fontConfig, ranges);
 
-            if (font != nullptr)
-            {
-                if (fontPath.find("assets/fonts/") == 0)
-                {
+            if (font != nullptr) {
+                if (fontPath.find("assets/fonts/") == 0) {
                     std::cout << "✓ Successfully loaded custom font: " << fontPath << std::endl;
-                }
-                else
-                {
+                } else {
                     std::cout << "✓ Successfully loaded system font: " << fontPath << std::endl;
                 }
                 fontLoaded = true;
@@ -338,9 +306,9 @@ void Application::setupFonts()
     }
 
     // Fallback: Use default font with Japanese ranges
-    if (!fontLoaded)
-    {
-        std::cout << "⚠ No custom or system fonts found, using default font with Japanese ranges" << std::endl;
+    if (!fontLoaded) {
+        std::cout << "⚠ No custom or system fonts found, using default font with Japanese ranges"
+                  << std::endl;
         fontConfig.MergeMode = false;
         io.Fonts->AddFontDefault(&fontConfig);
 
@@ -350,22 +318,21 @@ void Application::setupFonts()
         japaneseConfig.GlyphOffset = ImVec2(0.0f, 0.0f);
 
         // Try to find any available font and merge Japanese characters
-        for (const auto &fontPath : fontPaths)
-        {
+        for (const auto &fontPath : fontPaths) {
             std::ifstream fontFile(fontPath);
-            if (fontFile.good())
-            {
+            if (fontFile.good()) {
                 fontFile.close();
                 // Use appropriate ranges for the fallback font too
-                const ImWchar *fallbackRanges = io.Fonts->GetGlyphRangesJapanese(); // Good default for broad coverage
-                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &japaneseConfig, fallbackRanges);
-                if (fontPath.find("assets/fonts/") == 0)
-                {
-                    std::cout << "✓ Merged Japanese characters from custom font: " << fontPath << std::endl;
-                }
-                else
-                {
-                    std::cout << "✓ Merged Japanese characters from system font: " << fontPath << std::endl;
+                const ImWchar *fallbackRanges =
+                    io.Fonts->GetGlyphRangesJapanese(); // Good default for broad coverage
+                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &japaneseConfig,
+                                             fallbackRanges);
+                if (fontPath.find("assets/fonts/") == 0) {
+                    std::cout << "✓ Merged Japanese characters from custom font: " << fontPath
+                              << std::endl;
+                } else {
+                    std::cout << "✓ Merged Japanese characters from system font: " << fontPath
+                              << std::endl;
                 }
                 break;
             }
@@ -376,8 +343,7 @@ void Application::setupFonts()
     io.Fonts->Build();
 }
 
-void Application::setupDockingLayout(ImGuiID dockspaceId)
-{
+void Application::setupDockingLayout(ImGuiID dockspaceId) {
     if (dockingLayoutInitialized)
         return;
 
@@ -397,8 +363,7 @@ void Application::setupDockingLayout(ImGuiID dockspaceId)
     dockingLayoutInitialized = true;
 }
 
-void Application::renderMainUI()
-{
+void Application::renderMainUI() {
     // DockSpace setup
     const ImGuiViewport *viewport = ImGui::GetMainViewport();
     ImGui::SetNextWindowPos(viewport->Pos);
@@ -408,9 +373,10 @@ void Application::renderMainUI()
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0.0f);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
-    ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking |
-                                    ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-                                    ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+    ImGuiWindowFlags window_flags =
+        ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_NoTitleBar |
+        ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize | ImGuiWindowFlags_NoMove |
+        ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
     ImGui::Begin("DockSpace Demo", nullptr, window_flags);
 
@@ -430,12 +396,9 @@ void Application::renderMainUI()
 
     // Main content area
     ImGui::Begin("Content");
-    if (tabManager->isEmpty())
-    {
+    if (tabManager->isEmpty()) {
         tabManager->renderEmptyState();
-    }
-    else
-    {
+    } else {
         tabManager->renderTabs();
     }
     ImGui::End();
@@ -444,50 +407,37 @@ void Application::renderMainUI()
     ImGui::End();
 }
 
-void Application::renderMenuBar()
-{
-    if (ImGui::BeginMenuBar())
-    {
-        if (ImGui::BeginMenu("File"))
-        {
-            if (ImGui::MenuItem("Open Database", "Ctrl+O"))
-            {
+void Application::renderMenuBar() {
+    if (ImGui::BeginMenuBar()) {
+        if (ImGui::BeginMenu("File")) {
+            if (ImGui::MenuItem("Open Database", "Ctrl+O")) {
                 auto db = fileDialog->openDatabaseDialog();
-                if (db)
-                {
+                if (db) {
                     // Try to connect and load tables
-                    if (db->connect())
-                    {
+                    if (db->connect()) {
                         db->refreshTables();
-                        std::cout << "Adding database to list. Tables loaded: " << db->getTables().size() << std::endl;
+                        std::cout << "Adding database to list. Tables loaded: "
+                                  << db->getTables().size() << std::endl;
                         addDatabase(db);
-                    }
-                    else
-                    {
+                    } else {
                         std::cerr << "Failed to open database: " << db->getPath() << std::endl;
                     }
                 }
             }
-            if (ImGui::MenuItem("New SQL Editor", "Ctrl+N"))
-            {
+            if (ImGui::MenuItem("New SQL Editor", "Ctrl+N")) {
                 tabManager->createSQLEditorTab();
             }
             ImGui::Separator();
-            if (ImGui::MenuItem("Exit", "Alt+F4"))
-            {
+            if (ImGui::MenuItem("Exit", "Alt+F4")) {
                 glfwSetWindowShouldClose(window, true);
             }
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("View"))
-        {
-            if (ImGui::MenuItem("Refresh All"))
-            {
-                for (auto &db : databases)
-                {
-                    if (db->isConnected())
-                    {
+        if (ImGui::BeginMenu("View")) {
+            if (ImGui::MenuItem("Refresh All")) {
+                for (auto &db : databases) {
+                    if (db->isConnected()) {
                         db->refreshTables();
                     }
                 }
@@ -501,8 +451,7 @@ void Application::renderMenuBar()
         ImGui::Text("Dark");
         ImGui::SameLine();
         UIUtils::ToggleButton("##ThemeToggle", &darkTheme);
-        if (ImGui::IsItemClicked())
-        {
+        if (ImGui::IsItemClicked()) {
             setDarkTheme(darkTheme);
         }
 

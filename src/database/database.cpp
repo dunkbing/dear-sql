@@ -1,26 +1,19 @@
 #include "database/database.hpp"
 #include <iostream>
 
-Database::Database(const std::string &name, const std::string &path)
-    : name(name), path(path)
-{
-}
+Database::Database(const std::string &name, const std::string &path) : name(name), path(path) {}
 
-Database::~Database()
-{
+Database::~Database() {
     disconnect();
 }
 
-bool Database::connect()
-{
-    if (connected && connection)
-    {
+bool Database::connect() {
+    if (connected && connection) {
         return true;
     }
 
     int rc = sqlite3_open(path.c_str(), &connection);
-    if (rc != SQLITE_OK)
-    {
+    if (rc != SQLITE_OK) {
         std::cerr << "Can't open database: " << sqlite3_errmsg(connection) << std::endl;
         return false;
     }
@@ -30,21 +23,17 @@ bool Database::connect()
     return true;
 }
 
-void Database::disconnect()
-{
-    if (connection)
-    {
+void Database::disconnect() {
+    if (connection) {
         sqlite3_close(connection);
         connection = nullptr;
     }
     connected = false;
 }
 
-void Database::refreshTables()
-{
+void Database::refreshTables() {
     std::cout << "Refreshing tables for database: " << name << std::endl;
-    if (!connect())
-    {
+    if (!connect()) {
         std::cout << "Failed to connect to database" << std::endl;
         tablesLoaded = true; // Mark as loaded even if failed to prevent retry
         return;
@@ -54,8 +43,7 @@ void Database::refreshTables()
     std::vector<std::string> tableNames = getTableNames();
     std::cout << "Found " << tableNames.size() << " tables" << std::endl;
 
-    for (const auto &tableName : tableNames)
-    {
+    for (const auto &tableName : tableNames) {
         std::cout << "Adding table: " << tableName << std::endl;
         Table table;
         table.name = tableName;
@@ -66,28 +54,23 @@ void Database::refreshTables()
     tablesLoaded = true; // Mark as loaded to prevent infinite refresh
 }
 
-std::vector<std::string> Database::getTableNames()
-{
+std::vector<std::string> Database::getTableNames() {
     std::vector<std::string> tableNames;
-    const char *sql = "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;";
+    const char *sql =
+        "SELECT name FROM sqlite_master WHERE type IN ('table', 'view') ORDER BY name;";
     sqlite3_stmt *stmt;
 
     std::cout << "Executing query to get table names..." << std::endl;
     int rc = sqlite3_prepare_v2(connection, sql, -1, &stmt, NULL);
-    if (rc == SQLITE_OK)
-    {
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
+    if (rc == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
             const char *tableName = (const char *)sqlite3_column_text(stmt, 0);
-            if (tableName)
-            {
+            if (tableName) {
                 std::cout << "Found table: " << tableName << std::endl;
                 tableNames.push_back(std::string(tableName));
             }
         }
-    }
-    else
-    {
+    } else {
         std::cerr << "Failed to prepare SQL statement: " << sqlite3_errmsg(connection) << std::endl;
     }
     sqlite3_finalize(stmt);
@@ -95,16 +78,13 @@ std::vector<std::string> Database::getTableNames()
     return tableNames;
 }
 
-std::vector<Column> Database::getTableColumns(const std::string &tableName)
-{
+std::vector<Column> Database::getTableColumns(const std::string &tableName) {
     std::vector<Column> columns;
     std::string sql = "PRAGMA table_info(" + tableName + ");";
     sqlite3_stmt *stmt;
 
-    if (sqlite3_prepare_v2(connection, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK)
-    {
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
+    if (sqlite3_prepare_v2(connection, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
             Column col;
             col.name = (const char *)sqlite3_column_text(stmt, 1);
             col.type = (const char *)sqlite3_column_text(stmt, 2);

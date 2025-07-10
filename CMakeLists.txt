@@ -80,14 +80,8 @@ set(APP_SOURCES
     src/utils/toggle_button.cpp
 )
 
-# Platform-specific application sources
-if(APPLE)
-    # Use .mm extension for Objective-C++ on macOS
-    list(APPEND APP_SOURCES src/application.mm)
-else()
-    # Use .cpp extension for other platforms
-    list(APPEND APP_SOURCES src/application.cpp)
-endif()
+# Use .mm extension for all platforms (Objective-C++ can compile C++ code)
+list(APPEND APP_SOURCES src/application.mm)
 
 # Main application
 add_executable(${PROJECT_NAME}

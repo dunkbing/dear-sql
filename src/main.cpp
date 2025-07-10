@@ -1,11 +1,9 @@
 #include "application.hpp"
 
-int main()
-{
+int main() {
     auto &app = Application::getInstance();
 
-    if (!app.initialize())
-    {
+    if (!app.initialize()) {
         return -1;
     }
 

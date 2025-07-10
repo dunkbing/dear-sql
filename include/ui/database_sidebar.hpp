@@ -2,8 +2,7 @@
 
 #include "imgui.h"
 
-class DatabaseSidebar
-{
+class DatabaseSidebar {
 public:
     DatabaseSidebar() = default;
     ~DatabaseSidebar() = default;

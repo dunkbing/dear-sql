@@ -1,39 +1,31 @@
 #include "utils/file_dialog.hpp"
 #include "database/database.hpp"
-#include <nfd.h>
 #include <iostream>
+#include <nfd.h>
 
 bool FileDialog::isInitialized = false;
 
-bool FileDialog::initialize()
-{
-    if (!isInitialized)
-    {
+bool FileDialog::initialize() {
+    if (!isInitialized) {
         NFD_Init();
         isInitialized = true;
     }
     return true;
 }
 
-void FileDialog::cleanup()
-{
-    if (isInitialized)
-    {
+void FileDialog::cleanup() {
+    if (isInitialized) {
         NFD_Quit();
         isInitialized = false;
     }
 }
 
-std::shared_ptr<Database> FileDialog::openDatabaseDialog()
-{
+std::shared_ptr<Database> FileDialog::openDatabaseDialog() {
     nfdchar_t *outPath;
-    nfdfilteritem_t filterItem[2] = {
-        {"SQLite Database", "db,sqlite,sqlite3"},
-        {"All Files", "*"}};
+    nfdfilteritem_t filterItem[2] = {{"SQLite Database", "db,sqlite,sqlite3"}, {"All Files", "*"}};
 
     nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 2, NULL);
-    if (result == NFD_OKAY)
-    {
+    if (result == NFD_OKAY) {
         // Extract filename from path for display name
         std::string path(outPath);
         size_t lastSlash = path.find_last_of("/\\");
@@ -45,14 +37,10 @@ std::shared_ptr<Database> FileDialog::openDatabaseDialog()
         NFD_FreePath(outPath);
 
         return db;
-    }
-    else if (result == NFD_CANCEL)
-    {
+    } else if (result == NFD_CANCEL) {
         // User cancelled, do nothing
         return nullptr;
-    }
-    else
-    {
+    } else {
         std::cerr << "File dialog error: " << NFD_GetError() << std::endl;
         return nullptr;
     }

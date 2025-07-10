@@ -4,19 +4,18 @@
 #include "imgui_impl_glfw.h"
 
 #ifdef USE_METAL_BACKEND
-    #include "imgui_impl_metal.h"
-    #include <GLFW/glfw3.h>
-    #define GLFW_EXPOSE_NATIVE_COCOA
-    #include <GLFW/glfw3native.h>
-    // Forward declarations for Metal types (avoid Objective-C headers in C++)
-    #ifndef __OBJC__
-        typedef void* MetalDevice;
-        typedef void* MetalCommandQueue;
-        typedef void* MetalLayer;
-    #endif
+#include <GLFW/glfw3.h>
+#define GLFW_EXPOSE_NATIVE_COCOA
+#include <GLFW/glfw3native.h>
+// Forward declarations for Metal types (avoid Objective-C headers in C++)
+#ifndef __OBJC__
+typedef void *MetalDevice;
+typedef void *MetalCommandQueue;
+typedef void *MetalLayer;
+#endif
 #elif defined(USE_OPENGL_BACKEND)
-    #include "imgui_impl_opengl3.h"
-    #include <GLFW/glfw3.h>
+#include "imgui_impl_opengl3.h"
+#include <GLFW/glfw3.h>
 #endif
 #include <memory>
 #include <vector>
@@ -28,8 +27,7 @@ class TabManager;
 class DatabaseSidebar;
 class FileDialog;
 
-class Application
-{
+class Application {
 public:
     static Application &getInstance();
 
@@ -43,31 +41,57 @@ public:
     void cleanup();
 
     // Getters for managers and state
-    TabManager *getTabManager() const { return tabManager.get(); }
-    DatabaseSidebar *getDatabaseSidebar() const { return databaseSidebar.get(); }
-    FileDialog *getFileDialog() const { return fileDialog.get(); }
+    TabManager *getTabManager() const {
+        return tabManager.get();
+    }
+    DatabaseSidebar *getDatabaseSidebar() const {
+        return databaseSidebar.get();
+    }
+    FileDialog *getFileDialog() const {
+        return fileDialog.get();
+    }
 
     // Theme management
-    bool isDarkTheme() const { return darkTheme; }
+    bool isDarkTheme() const {
+        return darkTheme;
+    }
     void setDarkTheme(bool dark);
 
     // Selection state
-    int getSelectedDatabase() const { return selectedDatabase; }
-    void setSelectedDatabase(int index) { selectedDatabase = index; }
-    int getSelectedTable() const { return selectedTable; }
-    void setSelectedTable(int index) { selectedTable = index; }
+    int getSelectedDatabase() const {
+        return selectedDatabase;
+    }
+    void setSelectedDatabase(int index) {
+        selectedDatabase = index;
+    }
+    int getSelectedTable() const {
+        return selectedTable;
+    }
+    void setSelectedTable(const int index) {
+        selectedTable = index;
+    }
 
     // UI state
-    bool isDockingLayoutInitialized() const { return dockingLayoutInitialized; }
-    void setDockingLayoutInitialized(bool initialized) { dockingLayoutInitialized = initialized; }
+    bool isDockingLayoutInitialized() const {
+        return dockingLayoutInitialized;
+    }
+    void setDockingLayoutInitialized(bool initialized) {
+        dockingLayoutInitialized = initialized;
+    }
 
     // Database management
-    std::vector<std::shared_ptr<Database>> &getDatabases() { return databases; }
-    const std::vector<std::shared_ptr<Database>> &getDatabases() const { return databases; }
-    void addDatabase(std::shared_ptr<Database> db);
+    std::vector<std::shared_ptr<Database>> &getDatabases() {
+        return databases;
+    }
+    const std::vector<std::shared_ptr<Database>> &getDatabases() const {
+        return databases;
+    }
+    void addDatabase(const std::shared_ptr<Database>& db);
 
     // Window reference
-    GLFWwindow *getWindow() const { return window; }
+    GLFWwindow *getWindow() const {
+        return window;
+    }
 
 private:
     Application() = default;
@@ -80,16 +104,16 @@ private:
     std::unique_ptr<FileDialog> fileDialog;
 
 #ifdef USE_METAL_BACKEND
-    // Metal-specific components (using void* for C++ compatibility)
-    #ifdef __OBJC__
-        id metalDevice = nil;
-        id metalCommandQueue = nil;
-        id metalLayer = nil;
-    #else
-        MetalDevice metalDevice = nullptr;
-        MetalCommandQueue metalCommandQueue = nullptr;
-        MetalLayer metalLayer = nullptr;
-    #endif
+// Metal-specific components (using void* for C++ compatibility)
+#ifdef __OBJC__
+    id metalDevice = nil;
+    id metalCommandQueue = nil;
+    id metalLayer = nil;
+#else
+    MetalDevice metalDevice = nullptr;
+    MetalCommandQueue metalCommandQueue = nullptr;
+    MetalLayer metalLayer = nullptr;
+#endif
 #endif
 
     // Application state
@@ -105,7 +129,7 @@ private:
     bool initializeGLFW();
     bool initializeImGui();
     void setupFonts();
-    void setupDockingLayout(ImGuiID dockspaceId);
+    void setupDockingLayout(ImGuiID dockSpaceId);
     void renderMainUI();
     void renderMenuBar();
 };

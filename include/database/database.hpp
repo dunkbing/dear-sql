@@ -1,27 +1,24 @@
 #pragma once
 
+#include <memory>
 #include <sqlite3.h>
 #include <string>
 #include <vector>
-#include <memory>
 
-struct Column
-{
+struct Column {
     std::string name;
     std::string type;
     bool isPrimaryKey = false;
     bool isNotNull = false;
 };
 
-struct Table
-{
+struct Table {
     std::string name;
     std::vector<Column> columns;
     bool expanded = false;
 };
 
-class Database
-{
+class Database {
 public:
     Database(const std::string &name, const std::string &path);
     ~Database();
@@ -29,23 +26,43 @@ public:
     // Connection management
     bool connect();
     void disconnect();
-    bool isConnected() const { return connected; }
+    bool isConnected() const {
+        return connected;
+    }
 
     // Getters
-    const std::string &getName() const { return name; }
-    const std::string &getPath() const { return path; }
-    sqlite3 *getConnection() const { return connection; }
-    const std::vector<Table> &getTables() const { return tables; }
-    std::vector<Table> &getTables() { return tables; }
+    const std::string &getName() const {
+        return name;
+    }
+    const std::string &getPath() const {
+        return path;
+    }
+    sqlite3 *getConnection() const {
+        return connection;
+    }
+    const std::vector<Table> &getTables() const {
+        return tables;
+    }
+    std::vector<Table> &getTables() {
+        return tables;
+    }
 
     // Table management
     void refreshTables();
-    bool areTablesLoaded() const { return tablesLoaded; }
-    void setTablesLoaded(bool loaded) { tablesLoaded = loaded; }
+    bool areTablesLoaded() const {
+        return tablesLoaded;
+    }
+    void setTablesLoaded(bool loaded) {
+        tablesLoaded = loaded;
+    }
 
     // UI state
-    bool isExpanded() const { return expanded; }
-    void setExpanded(bool exp) { expanded = exp; }
+    bool isExpanded() const {
+        return expanded;
+    }
+    void setExpanded(bool exp) {
+        expanded = exp;
+    }
 
 private:
     std::string name;

@@ -1,6 +1,5 @@
 #pragma once
 
-namespace UIUtils
-{
+namespace UIUtils {
     void ToggleButton(const char *str_id, bool *v);
 }

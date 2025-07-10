@@ -1,23 +1,19 @@
 #include "database/query_executor.hpp"
 #include <sstream>
 
-std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query)
-{
+std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query) {
     std::stringstream result;
     sqlite3_stmt *stmt;
 
-    if (sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL) != SQLITE_OK)
-    {
+    if (sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL) != SQLITE_OK) {
         return "Error: " + std::string(sqlite3_errmsg(db));
     }
 
     // Get column count and names
     int columnCount = sqlite3_column_count(stmt);
-    if (columnCount > 0)
-    {
+    if (columnCount > 0) {
         // Headers
-        for (int i = 0; i < columnCount; i++)
-        {
+        for (int i = 0; i < columnCount; i++) {
             result << sqlite3_column_name(stmt, i);
             if (i < columnCount - 1)
                 result << " | ";
@@ -25,8 +21,7 @@ std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query)
         result << "\n";
 
         // Separator
-        for (int i = 0; i < columnCount; i++)
-        {
+        for (int i = 0; i < columnCount; i++) {
             result << "----------";
             if (i < columnCount - 1)
                 result << "-+-";
@@ -36,10 +31,8 @@ std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query)
 
     // Data rows
     int rowCount = 0;
-    while (sqlite3_step(stmt) == SQLITE_ROW && rowCount < 1000)
-    { // Limit to 1000 rows
-        for (int i = 0; i < columnCount; i++)
-        {
+    while (sqlite3_step(stmt) == SQLITE_ROW && rowCount < 1000) { // Limit to 1000 rows
+        for (int i = 0; i < columnCount; i++) {
             const char *text = (const char *)sqlite3_column_text(stmt, i);
             result << (text ? text : "NULL");
             if (i < columnCount - 1)
@@ -49,12 +42,9 @@ std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query)
         rowCount++;
     }
 
-    if (rowCount == 0 && columnCount == 0)
-    {
+    if (rowCount == 0 && columnCount == 0) {
         result << "Query executed successfully. Rows affected: " << sqlite3_changes(db);
-    }
-    else if (rowCount == 1000)
-    {
+    } else if (rowCount == 1000) {
         result << "\n... (showing first 1000 rows)";
     }
 
@@ -62,25 +52,18 @@ std::string QueryExecutor::executeQuery(sqlite3 *db, const std::string &query)
     return result.str();
 }
 
-std::vector<std::vector<std::string>> QueryExecutor::getTableData(
-    sqlite3 *db,
-    const std::string &tableName,
-    int limit,
-    int offset)
-{
+std::vector<std::vector<std::string>>
+QueryExecutor::getTableData(sqlite3 *db, const std::string &tableName, int limit, int offset) {
     std::vector<std::vector<std::string>> data;
-    std::string sql = "SELECT * FROM " + tableName + " LIMIT " +
-                      std::to_string(limit) + " OFFSET " + std::to_string(offset);
+    std::string sql = "SELECT * FROM " + tableName + " LIMIT " + std::to_string(limit) +
+                      " OFFSET " + std::to_string(offset);
 
     sqlite3_stmt *stmt;
-    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK)
-    {
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {
         int columnCount = sqlite3_column_count(stmt);
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
             std::vector<std::string> row;
-            for (int i = 0; i < columnCount; i++)
-            {
+            for (int i = 0; i < columnCount; i++) {
                 const char *text = (const char *)sqlite3_column_text(stmt, i);
                 row.push_back(text ? text : "NULL");
             }
@@ -91,16 +74,13 @@ std::vector<std::vector<std::string>> QueryExecutor::getTableData(
     return data;
 }
 
-std::vector<std::string> QueryExecutor::getColumnNames(sqlite3 *db, const std::string &tableName)
-{
+std::vector<std::string> QueryExecutor::getColumnNames(sqlite3 *db, const std::string &tableName) {
     std::vector<std::string> columnNames;
     std::string sql = "PRAGMA table_info(" + tableName + ");";
     sqlite3_stmt *stmt;
 
-    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK)
-    {
-        while (sqlite3_step(stmt) == SQLITE_ROW)
-        {
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {
+        while (sqlite3_step(stmt) == SQLITE_ROW) {
             columnNames.push_back((const char *)sqlite3_column_text(stmt, 1));
         }
     }
@@ -108,16 +88,13 @@ std::vector<std::string> QueryExecutor::getColumnNames(sqlite3 *db, const std::s
     return columnNames;
 }
 
-int QueryExecutor::getRowCount(sqlite3 *db, const std::string &tableName)
-{
+int QueryExecutor::getRowCount(sqlite3 *db, const std::string &tableName) {
     std::string sql = "SELECT COUNT(*) FROM " + tableName;
     sqlite3_stmt *stmt;
     int count = 0;
 
-    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK)
-    {
-        if (sqlite3_step(stmt) == SQLITE_ROW)
-        {
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK) {
+        if (sqlite3_step(stmt) == SQLITE_ROW) {
             count = sqlite3_column_int(stmt, 0);
         }
     }
