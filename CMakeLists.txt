@@ -28,9 +28,30 @@ set(IMGUI_SOURCES
     external/imgui/backends/imgui_impl_opengl3.cpp
 )
 
+# Application source files
+set(APP_SOURCES
+    src/main.cpp
+    src/application.cpp
+
+    # Database
+    src/database/database.cpp
+    src/database/query_executor.cpp
+
+    # Tabs
+    src/tabs/tab.cpp
+    src/tabs/tab_manager.cpp
+
+    # UI
+    src/ui/database_sidebar.cpp
+
+    # Utils
+    src/utils/file_dialog.cpp
+    src/utils/toggle_button.cpp
+)
+
 # Main application
 add_executable(${PROJECT_NAME}
-    src/main.cpp
+    ${APP_SOURCES}
     ${IMGUI_SOURCES}
 )
 
