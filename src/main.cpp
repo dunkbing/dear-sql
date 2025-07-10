@@ -710,8 +710,121 @@ int main()
     ImGui::CreateContext();
     ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
+
+    // Configure fonts with Japanese support
+    ImFontConfig fontConfig;
+    fontConfig.MergeMode = false;
+
+    // Try to load fonts from assets folder first, then fallback to system fonts
+    std::vector<std::string> fontPaths =  {
+// System fonts as fallback
+#ifdef __APPLE__
+        "/System/Library/Fonts/Hiragino Sans GB.ttc",
+        "/System/Library/Fonts/PingFang.ttc",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/Library/Fonts/Arial Unicode MS.ttf"
+#elif defined(_WIN32)
+        "C:/Windows/Fonts/msgothic.ttc",
+        "C:/Windows/Fonts/meiryo.ttc",
+        "C:/Windows/Fonts/YuGothM.ttc",
+        "C:/Windows/Fonts/arial.ttf"
+#else
+        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
+        "/usr/share/fonts/TTF/DejaVuSans.ttf"
+#endif
+    };
+
+    bool fontLoaded = false;
+
+    // Try to load the first available font
+    for (const auto &fontPath : fontPaths)
+    {
+        std::ifstream fontFile(fontPath);
+        if (fontFile.good())
+        {
+            fontFile.close();
+
+            // Load the font with comprehensive Unicode ranges
+            const ImWchar *ranges = nullptr;
+
+            // Choose appropriate glyph ranges based on font name
+            if (fontPath.find("CJK") != std::string::npos || fontPath.find("Han") != std::string::npos)
+            {
+                ranges = io.Fonts->GetGlyphRangesJapanese(); // Full CJK support
+            }
+            else if (fontPath.find("Cyrillic") != std::string::npos || fontPath.find("NotoSans-Regular") != std::string::npos)
+            {
+                ranges = io.Fonts->GetGlyphRangesCyrillic(); // Cyrillic + Latin
+            }
+            else if (fontPath.find("unifont") != std::string::npos || fontPath.find("Arabic") != std::string::npos)
+            {
+                ranges = nullptr; // Load all available glyphs for maximum coverage
+            }
+            else
+            {
+                // For general fonts, use Japanese ranges for broad coverage (includes Latin + CJK)
+                ranges = io.Fonts->GetGlyphRangesJapanese();
+            }
+
+            ImFont *font = io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &fontConfig, ranges);
+
+            if (font != nullptr)
+            {
+                if (fontPath.find("assets/fonts/") == 0)
+                {
+                    std::cout << "✓ Successfully loaded custom font: " << fontPath << std::endl;
+                }
+                else
+                {
+                    std::cout << "✓ Successfully loaded system font: " << fontPath << std::endl;
+                }
+                fontLoaded = true;
+                break;
+            }
+        }
+    }
+
+    // Fallback: Use default font with Japanese ranges
+    if (!fontLoaded)
+    {
+        std::cout << "⚠ No custom or system fonts found, using default font with Japanese ranges" << std::endl;
+        fontConfig.MergeMode = false;
+        io.Fonts->AddFontDefault(&fontConfig);
+
+        // Add Japanese characters to the default font
+        ImFontConfig japaneseConfig;
+        japaneseConfig.MergeMode = true;
+        japaneseConfig.GlyphOffset = ImVec2(0.0f, 0.0f);
+
+        // Try to find any available font and merge Japanese characters
+        for (const auto &fontPath : fontPaths)
+        {
+            std::ifstream fontFile(fontPath);
+            if (fontFile.good())
+            {
+                fontFile.close();
+                // Use appropriate ranges for the fallback font too
+                const ImWchar *fallbackRanges = io.Fonts->GetGlyphRangesJapanese(); // Good default for broad coverage
+                io.Fonts->AddFontFromFileTTF(fontPath.c_str(), 16.0f, &japaneseConfig, fallbackRanges);
+                if (fontPath.find("assets/fonts/") == 0)
+                {
+                    std::cout << "✓ Merged Japanese characters from custom font: " << fontPath << std::endl;
+                }
+                else
+                {
+                    std::cout << "✓ Merged Japanese characters from system font: " << fontPath << std::endl;
+                }
+                break;
+            }
+        }
+    }
+
+    // Build the font atlas
+    io.Fonts->Build();
+
     ImGui::StyleColorsDark();
-    Theme::ApplyTheme(Theme::MOCHA);
+    Theme::ApplyNativeTheme(dark_theme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 
     ImGui_ImplGlfw_InitForOpenGL(window, true);
     ImGui_ImplOpenGL3_Init("#version 330");
@@ -798,7 +911,7 @@ int main()
             ToggleButton("##ThemeToggle", &dark_theme);
             if (ImGui::IsItemClicked())
             {
-                Theme::ApplyTheme(dark_theme ? Theme::MOCHA : Theme::LATTE);
+                Theme::ApplyNativeTheme(dark_theme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
             }
 
             ImGui::EndMenuBar();
