@@ -87,6 +87,42 @@ void TableViewerTab::render() {
         lastPage();
     }
 
+    // Action buttons next to pagination
+    ImGui::SameLine();
+    ImGui::Dummy(ImVec2(20, 0)); // Add some spacing
+    ImGui::SameLine();
+
+    if (ImGui::Button("Refresh")) {
+        refreshData();
+    }
+    ImGui::SameLine();
+
+    if (hasChanges) {
+        if (ImGui::Button("Save")) {
+            saveChanges();
+        }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Button("Save");
+        ImGui::EndDisabled();
+    }
+
+    ImGui::SameLine();
+    if (hasChanges) {
+        if (ImGui::Button("Cancel")) {
+            cancelChanges();
+        }
+    } else {
+        ImGui::BeginDisabled();
+        ImGui::Button("Cancel");
+        ImGui::EndDisabled();
+    }
+
+    if (hasChanges) {
+        ImGui::SameLine();
+        ImGui::TextColored(ImVec4(1.0f, 0.8f, 0.0f, 1.0f), "Unsaved changes");
+    }
+
     ImGui::Separator();
 
     // Table display
@@ -101,11 +137,52 @@ void TableViewerTab::render() {
             ImGui::TableHeadersRow();
 
             // Data rows
-            for (const auto &row : tableData) {
+            for (size_t rowIdx = 0; rowIdx < tableData.size(); rowIdx++) {
+                const auto &row = tableData[rowIdx];
                 ImGui::TableNextRow();
-                for (size_t i = 0; i < row.size() && i < columnNames.size(); i++) {
+
+                for (size_t colIdx = 0; colIdx < row.size() && colIdx < columnNames.size();
+                     colIdx++) {
                     ImGui::TableNextColumn();
-                    ImGui::Text("%s", row[i].c_str());
+
+                    // Check if this cell is being edited
+                    if (editingRow == (int)rowIdx && editingCol == (int)colIdx) {
+                        // Edit mode - show input field
+                        ImGui::SetKeyboardFocusHere();
+                        if (ImGui::InputText("##edit", editBuffer, sizeof(editBuffer),
+                                             ImGuiInputTextFlags_EnterReturnsTrue)) {
+                            exitEditMode(true);
+                        }
+                        // Exit edit mode on Escape
+                        if (ImGui::IsKeyPressed(ImGuiKey_Escape)) {
+                            exitEditMode(false);
+                        }
+                    } else {
+                        // Display mode - show cell content
+                        ImGui::PushID((int)(rowIdx * columnNames.size() + colIdx));
+
+                        // Check for cell selection highlighting
+                        bool isSelected =
+                            (selectedRow == (int)rowIdx && selectedCol == (int)colIdx);
+                        if (isSelected) {
+                            ImGui::TableSetBgColor(ImGuiTableBgTarget_CellBg,
+                                                   ImGui::GetColorU32(ImGuiCol_ButtonActive));
+                        }
+
+                        // Use a simple selectable text
+                        if (ImGui::Selectable(row[colIdx].c_str(), isSelected,
+                                              ImGuiSelectableFlags_AllowDoubleClick)) {
+                            // Single click - select cell
+                            selectCell((int)rowIdx, (int)colIdx);
+
+                            // Double click - enter edit mode
+                            if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                                enterEditMode((int)rowIdx, (int)colIdx);
+                            }
+                        }
+
+                        ImGui::PopID();
+                    }
                 }
             }
 
@@ -141,6 +218,10 @@ void TableViewerTab::loadData() {
     // Get data with pagination
     int offset = currentPage * rowsPerPage;
     tableData = QueryExecutor::getTableData(db->getConnection(), tableName, rowsPerPage, offset);
+
+    // Store original data for change tracking
+    originalData = tableData;
+    hasChanges = false;
 }
 
 void TableViewerTab::nextPage() {
@@ -167,4 +248,75 @@ void TableViewerTab::lastPage() {
     int totalPages = (totalRows + rowsPerPage - 1) / rowsPerPage;
     currentPage = totalPages - 1;
     loadData();
+}
+
+void TableViewerTab::refreshData() {
+    // Reset edit state
+    editingRow = -1;
+    editingCol = -1;
+    selectedRow = -1;
+    selectedCol = -1;
+    hasChanges = false;
+
+    // Reload data from database
+    loadData();
+}
+
+void TableViewerTab::saveChanges() {
+    // For now, just mark as no changes (would need database update logic)
+    hasChanges = false;
+    originalData = tableData;
+
+    // TODO: Implement actual database update logic
+    // This would require UPDATE SQL statements for each modified cell
+}
+
+void TableViewerTab::cancelChanges() {
+    // Restore original data
+    tableData = originalData;
+    hasChanges = false;
+
+    // Reset edit state
+    editingRow = -1;
+    editingCol = -1;
+    selectedRow = -1;
+    selectedCol = -1;
+}
+
+void TableViewerTab::enterEditMode(int row, int col) {
+    if (row >= 0 && row < (int)tableData.size() && col >= 0 && col < (int)columnNames.size()) {
+
+        editingRow = row;
+        editingCol = col;
+
+        // Copy current cell value to edit buffer
+        strncpy(editBuffer, tableData[row][col].c_str(), sizeof(editBuffer) - 1);
+        editBuffer[sizeof(editBuffer) - 1] = '\0';
+    }
+}
+
+void TableViewerTab::exitEditMode(bool saveEdit) {
+    if (editingRow >= 0 && editingCol >= 0) {
+        if (saveEdit) {
+            // Save the edited value
+            std::string newValue = editBuffer;
+            if (newValue != tableData[editingRow][editingCol]) {
+                tableData[editingRow][editingCol] = newValue;
+                hasChanges = true;
+            }
+        }
+
+        // Clear edit state
+        editingRow = -1;
+        editingCol = -1;
+        memset(editBuffer, 0, sizeof(editBuffer));
+    }
+}
+
+void TableViewerTab::selectCell(int row, int col) {
+    if (row >= 0 && row < (int)tableData.size() && col >= 0 && col < (int)columnNames.size()) {
+
+        selectedRow = row;
+        selectedCol = col;
+    }
 }

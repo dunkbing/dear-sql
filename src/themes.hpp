@@ -217,4 +217,3 @@ namespace Theme {
         ApplyNativeTheme(colors, false);
     }
 } // namespace Theme
-

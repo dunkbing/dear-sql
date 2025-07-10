@@ -90,13 +90,30 @@ public:
     void previousPage();
     void firstPage();
     void lastPage();
+    void refreshData();
+    void saveChanges();
+    void cancelChanges();
 
 private:
     std::string databasePath;
     std::string tableName;
     std::vector<std::vector<std::string>> tableData;
+    std::vector<std::vector<std::string>> originalData;
     std::vector<std::string> columnNames;
     int currentPage = 0;
     int rowsPerPage = 100;
     int totalRows = 0;
+    
+    // Edit state
+    int editingRow = -1;
+    int editingCol = -1;
+    int selectedRow = -1;
+    int selectedCol = -1;
+    char editBuffer[1024] = "";
+    bool hasChanges = false;
+    
+    // Helper methods
+    void enterEditMode(int row, int col);
+    void exitEditMode(bool saveEdit);
+    void selectCell(int row, int col);
 };
