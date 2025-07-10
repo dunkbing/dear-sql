@@ -83,6 +83,46 @@ set(APP_SOURCES
 # Use .mm extension for all platforms (Objective-C++ can compile C++ code)
 list(APPEND APP_SOURCES src/application.mm)
 
+# Embed font files as resources
+file(GLOB FONT_FILES "assets/fonts/*.ttf" "assets/fonts/*.otf")
+set(RESOURCE_FILE "${CMAKE_CURRENT_BINARY_DIR}/embedded_fonts.cpp")
+
+file(WRITE ${RESOURCE_FILE} "#include <cstdint>\n#include <cstddef>\n\n")
+file(APPEND ${RESOURCE_FILE} "struct EmbeddedFont {\n")
+file(APPEND ${RESOURCE_FILE} "    const char* name;\n")
+file(APPEND ${RESOURCE_FILE} "    const uint8_t* data;\n")
+file(APPEND ${RESOURCE_FILE} "    size_t size;\n")
+file(APPEND ${RESOURCE_FILE} "};\n\n")
+
+if(FONT_FILES)
+    foreach(FONT_FILE ${FONT_FILES})
+        get_filename_component(FONT_NAME ${FONT_FILE} NAME_WE)
+        string(MAKE_C_IDENTIFIER ${FONT_NAME} FONT_VAR)
+        
+        file(READ ${FONT_FILE} FONT_DATA HEX)
+        string(REGEX REPLACE "([0-9a-fA-F][0-9a-fA-F])" "0x\\1," FONT_DATA ${FONT_DATA})
+        string(REGEX REPLACE ",$" "" FONT_DATA ${FONT_DATA})
+        
+        file(APPEND ${RESOURCE_FILE} "static const uint8_t ${FONT_VAR}_data[] = {${FONT_DATA}};\n")
+    endforeach()
+    
+    file(APPEND ${RESOURCE_FILE} "\nstatic const EmbeddedFont embedded_fonts[] = {\n")
+    foreach(FONT_FILE ${FONT_FILES})
+        get_filename_component(FONT_NAME ${FONT_FILE} NAME_WE)
+        string(MAKE_C_IDENTIFIER ${FONT_NAME} FONT_VAR)
+        file(APPEND ${RESOURCE_FILE} "    {\"${FONT_NAME}\", ${FONT_VAR}_data, sizeof(${FONT_VAR}_data)},\n")
+    endforeach()
+    file(APPEND ${RESOURCE_FILE} "};\n\n")
+    
+    file(APPEND ${RESOURCE_FILE} "extern \"C\" const EmbeddedFont* getEmbeddedFonts() { return embedded_fonts; }\n")
+    file(APPEND ${RESOURCE_FILE} "extern \"C\" size_t getEmbeddedFontCount() { return sizeof(embedded_fonts) / sizeof(embedded_fonts[0]); }\n")
+else()
+    file(APPEND ${RESOURCE_FILE} "extern \"C\" const EmbeddedFont* getEmbeddedFonts() { return nullptr; }\n")
+    file(APPEND ${RESOURCE_FILE} "extern \"C\" size_t getEmbeddedFontCount() { return 0; }\n")
+endif()
+
+list(APPEND APP_SOURCES ${RESOURCE_FILE})
+
 # Main application
 add_executable(${PROJECT_NAME}
     ${APP_SOURCES}
@@ -94,6 +134,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     external/imgui
     external/imgui/backends
     external/json/include
+    ${CMAKE_CURRENT_BINARY_DIR}
 )
 
 # Link libraries

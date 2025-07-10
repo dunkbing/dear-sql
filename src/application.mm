@@ -1,5 +1,6 @@
 #include "application.hpp"
 #include "database/database.hpp"
+#include "imgui_impl_metal.h"
 #include "tabs/tab_manager.hpp"
 #include "themes.hpp"
 #include "ui/database_sidebar.hpp"
@@ -7,8 +8,18 @@
 #include "utils/toggle_button.hpp"
 #include <fstream>
 #include <imgui_internal.h>
-#include "imgui_impl_metal.h"
 #include <iostream>
+
+// Forward declarations for embedded fonts
+extern "C" {
+struct EmbeddedFont {
+    const char *name;
+    const uint8_t *data;
+    size_t size;
+};
+const EmbeddedFont *getEmbeddedFonts();
+size_t getEmbeddedFontCount();
+}
 
 #ifdef USE_METAL_BACKEND
 #import <Foundation/Foundation.h>
@@ -156,7 +167,7 @@ void Application::setDarkTheme(bool dark) {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
 
-void Application::addDatabase(const std::shared_ptr<Database>& db) {
+void Application::addDatabase(const std::shared_ptr<Database> &db) {
     databases.push_back(db);
 }
 
@@ -248,23 +259,61 @@ void Application::setupFonts() {
     ImFontConfig fontConfig;
     fontConfig.MergeMode = false;
 
+    bool fontLoaded = false;
+
+    // Try to load embedded fonts first
+    size_t embeddedFontCount = getEmbeddedFontCount();
+    if (embeddedFontCount > 0) {
+        const EmbeddedFont *embeddedFonts = getEmbeddedFonts();
+        for (size_t i = 0; i < embeddedFontCount; ++i) {
+            const EmbeddedFont &font = embeddedFonts[i];
+
+            // Choose appropriate glyph ranges based on font name
+            const ImWchar *ranges = nullptr;
+            std::string fontName = font.name;
+
+            if (fontName.find("CJK") != std::string::npos ||
+                fontName.find("Han") != std::string::npos) {
+                ranges = io.Fonts->GetGlyphRangesChineseFull();
+            } else if (fontName.find("Cyrillic") != std::string::npos) {
+                ranges = io.Fonts->GetGlyphRangesCyrillic();
+            } else {
+                ranges = io.Fonts->GetGlyphRangesJapanese(); // Default for broad coverage
+            }
+
+            ImFont *loadedFont = io.Fonts->AddFontFromMemoryTTF((void *)font.data, font.size, 16.0f,
+                                                                &fontConfig, ranges);
+
+            if (loadedFont) {
+                std::cout << "✓ Successfully loaded embedded font: " << font.name << std::endl;
+                fontLoaded = true;
+                break; // Use the first successfully loaded font
+            }
+        }
+    }
+
     // Try to load fonts from assets folder first, then fallback to system fonts
-    std::vector<std::string> fontPaths = {
+    std::vector<std::string> fontPaths = {// Asset fonts first
+                                          "assets/fonts/NotoSans-Regular.ttf",
+                                          "assets/fonts/NotoSansCJK-Regular.otf",
 // System fonts as fallback
 #ifdef __APPLE__
-        "/System/Library/Fonts/Hiragino Sans GB.ttc", "/System/Library/Fonts/PingFang.ttc",
-        "/System/Library/Fonts/Helvetica.ttc", "/Library/Fonts/Arial Unicode MS.ttf"
+                                          "/System/Library/Fonts/Hiragino Sans GB.ttc",
+                                          "/System/Library/Fonts/PingFang.ttc",
+                                          "/System/Library/Fonts/Helvetica.ttc",
+                                          "/Library/Fonts/Arial Unicode MS.ttf"
 #elif defined(_WIN32)
-        "C:/Windows/Fonts/msgothic.ttc", "C:/Windows/Fonts/meiryo.ttc",
-        "C:/Windows/Fonts/YuGothM.ttc", "C:/Windows/Fonts/arial.ttf"
+                                          "C:/Windows/Fonts/msgothic.ttc",
+                                          "C:/Windows/Fonts/meiryo.ttc",
+                                          "C:/Windows/Fonts/YuGothM.ttc",
+                                          "C:/Windows/Fonts/arial.ttf"
 #else
-        "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
-        "/usr/share/fonts/truetype/liberation/LiberationSans-Regular.ttf",
-        "/usr/share/fonts/TTF/DejaVuSans.ttf"
+                                          "/usr/share/fonts/truetype/noto/NotoSansCJK-Regular.ttc",
+                                          "/usr/share/fonts/truetype/liberation/"
+                                          "LiberationSans-Regular.ttf",
+                                          "/usr/share/fonts/TTF/DejaVuSans.ttf"
 #endif
     };
-
-    bool fontLoaded = false;
 
     // Try to load the first available font
     for (const auto &fontPath : fontPaths) {
@@ -278,7 +327,7 @@ void Application::setupFonts() {
             // Choose appropriate glyph ranges based on font name
             if (fontPath.find("CJK") != std::string::npos ||
                 fontPath.find("Han") != std::string::npos) {
-                ranges = io.Fonts->GetGlyphRangesJapanese(); // Full CJK support
+                ranges = io.Fonts->GetGlyphRangesJapanese();
             } else if (fontPath.find("Cyrillic") != std::string::npos ||
                        fontPath.find("NotoSans-Regular") != std::string::npos) {
                 ranges = io.Fonts->GetGlyphRangesCyrillic(); // Cyrillic + Latin

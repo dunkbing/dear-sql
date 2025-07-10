@@ -128,7 +128,7 @@ private:
     // Private helper methods
     bool initializeGLFW();
     bool initializeImGui();
-    void setupFonts();
+    static void setupFonts();
     void setupDockingLayout(ImGuiID dockSpaceId);
     void renderMainUI();
     void renderMenuBar();

@@ -1,10 +1,8 @@
 #pragma once
 #include "imgui.h"
 
-namespace Theme
-{
-    struct Colors
-    {
+namespace Theme {
+    struct Colors {
         ImVec4 rosewater;
         ImVec4 flamingo;
         ImVec4 pink;
@@ -97,8 +95,7 @@ namespace Theme
     const Colors MOCHA = NATIVE_DARK;
     const Colors LATTE = NATIVE_LIGHT;
 
-    void ApplyNativeTheme(const Colors &colors, bool isLight = false)
-    {
+    void ApplyNativeTheme(const Colors &colors, bool isLight = false) {
         ImGuiStyle &style = ImGui::GetStyle();
 
         // Native-like padding and spacing
@@ -192,7 +189,8 @@ namespace Theme
         colors_array[ImGuiCol_TabActive] = colors.surface0;
         colors_array[ImGuiCol_TabUnfocused] = colors.mantle;
         colors_array[ImGuiCol_TabUnfocusedActive] = colors.surface0;
-        colors_array[ImGuiCol_DockingPreview] = ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
+        colors_array[ImGuiCol_DockingPreview] =
+            ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
         colors_array[ImGuiCol_DockingEmptyBg] = colors.base;
         colors_array[ImGuiCol_PlotLines] = colors.text;
         colors_array[ImGuiCol_PlotLinesHovered] = colors.blue;
@@ -202,9 +200,12 @@ namespace Theme
         colors_array[ImGuiCol_TableBorderStrong] = colors.overlay1;
         colors_array[ImGuiCol_TableBorderLight] = colors.overlay0;
         colors_array[ImGuiCol_TableRowBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.0f); // Transparent
-        colors_array[ImGuiCol_TableRowBgAlt] = ImVec4(colors.surface0.x, colors.surface0.y, colors.surface0.z, 0.5f);
-        colors_array[ImGuiCol_TextSelectedBg] = ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
-        colors_array[ImGuiCol_DragDropTarget] = ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f);
+        colors_array[ImGuiCol_TableRowBgAlt] =
+            ImVec4(colors.surface0.x, colors.surface0.y, colors.surface0.z, 0.5f);
+        colors_array[ImGuiCol_TextSelectedBg] =
+            ImVec4(colors.blue.x, colors.blue.y, colors.blue.z, 0.3f);
+        colors_array[ImGuiCol_DragDropTarget] =
+            ImVec4(colors.green.x, colors.green.y, colors.green.z, 0.8f);
         colors_array[ImGuiCol_NavHighlight] = colors.blue;
         colors_array[ImGuiCol_NavWindowingHighlight] = colors.blue;
         colors_array[ImGuiCol_NavWindowingDimBg] = ImVec4(0.0f, 0.0f, 0.0f, 0.2f);
@@ -212,8 +213,8 @@ namespace Theme
     }
 
     // Legacy function for backward compatibility
-    void ApplyTheme(const Colors &colors)
-    {
+    inline void ApplyTheme(const Colors &colors) {
         ApplyNativeTheme(colors, false);
     }
-}
+} // namespace Theme
+
