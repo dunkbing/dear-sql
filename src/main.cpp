@@ -1,384 +1,617 @@
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
 #include "imgui_impl_opengl3.h"
-#include <curl/curl.h>
+#include <sqlite3.h>
 #include <nlohmann/json.hpp>
 #include <GLFW/glfw3.h>
+#include <nfd.h>
 #include <vector>
-#include <array>
+#include <string>
+#include <memory>
+#include <map>
 #include <iostream>
-#include <algorithm>
+#include <fstream>
+#include <sstream>
 #include "themes.hpp"
 #include <imgui_internal.h>
 
 static bool dark_theme = true;
 
-enum class HttpMethod {
-    GET,
-    POST,
-    PUT,
-    DELETE,
-    PATCH
+enum class TabType
+{
+    SQL_EDITOR,
+    TABLE_VIEWER
 };
 
-struct Request {
+struct Column
+{
     std::string name;
-    std::string url;
-    std::string response;
-    HttpMethod method = HttpMethod::GET;
+    std::string type;
+    bool isPrimaryKey = false;
+    bool isNotNull = false;
+};
+
+struct Table
+{
+    std::string name;
+    std::vector<Column> columns;
+    bool expanded = false;
+};
+
+struct Database
+{
+    std::string name;
+    std::string path;
+    sqlite3 *connection = nullptr;
+    std::vector<Table> tables;
+    bool expanded = false;
+    bool connected = false;
+};
+
+struct Tab
+{
+    std::string name;
+    TabType type;
     bool open = true;
-    std::map<std::string, std::string> queryParams;
-    std::map<std::string, std::string> headers;
-    std::string body;
+
+    // SQL Editor specific
+    std::string sqlQuery;
+    std::string queryResult;
+
+    // Table Viewer specific
+    std::string databasePath;
+    std::string tableName;
+    std::vector<std::vector<std::string>> tableData;
+    std::vector<std::string> columnNames;
+    int currentPage = 0;
+    int rowsPerPage = 100;
+    int totalRows = 0;
+
+    Tab(const std::string &tabName, TabType tabType) : name(tabName), type(tabType) {}
 };
 
-static std::vector<std::shared_ptr<Request>> requests;
-static int selectedRequest = -1;
-static char urlBuffer[1024] = "";
-static char responseBuffer[16384] = "";
-static char queryParamsBuffer[1024] = "";
-static char headersBuffer[1024] = "";
-static char bodyBuffer[4096] = "";
+static std::vector<std::shared_ptr<Database>> databases;
+static std::vector<std::shared_ptr<Tab>> tabs;
+static int selectedDatabase = -1;
+static int selectedTable = -1;
+static char sqlBuffer[4096] = "";
+static char queryResultBuffer[16384] = "";
+static bool dockingLayoutInitialized = false;
 
-const char* methodToString(HttpMethod method) {
-    switch (method) {
-        case HttpMethod::GET: return "GET";
-        case HttpMethod::POST: return "POST";
-        case HttpMethod::PUT: return "PUT";
-        case HttpMethod::DELETE: return "DELETE";
-        case HttpMethod::PATCH: return "PATCH";
-        default: return "UNKNOWN";
+// SQLite helper functions
+bool connectToDatabase(Database &db)
+{
+    if (db.connected && db.connection)
+    {
+        return true;
     }
+
+    int rc = sqlite3_open(db.path.c_str(), &db.connection);
+    if (rc != SQLITE_OK)
+    {
+        std::cerr << "Can't open database: " << sqlite3_errmsg(db.connection) << std::endl;
+        return false;
+    }
+
+    db.connected = true;
+    return true;
 }
 
-const std::map<HttpMethod, ImVec4>& getMethodColors() {
-    static const std::map<HttpMethod, ImVec4> darkColors = {
-        {HttpMethod::GET, Theme::MOCHA.green},
-        {HttpMethod::POST, Theme::MOCHA.peach},
-        {HttpMethod::PUT, Theme::MOCHA.blue},
-        {HttpMethod::DELETE, Theme::MOCHA.red},
-        {HttpMethod::PATCH, Theme::MOCHA.yellow}
-    };
-
-    static const std::map<HttpMethod, ImVec4> lightColors = {
-        {HttpMethod::GET, Theme::LATTE.green},
-        {HttpMethod::POST, Theme::LATTE.peach},
-        {HttpMethod::PUT, Theme::LATTE.blue},
-        {HttpMethod::DELETE, Theme::LATTE.red},
-        {HttpMethod::PATCH, Theme::LATTE.yellow}
-    };
-
-    return dark_theme ? darkColors : lightColors;
+void disconnectDatabase(Database &db)
+{
+    if (db.connection)
+    {
+        sqlite3_close(db.connection);
+        db.connection = nullptr;
+    }
+    db.connected = false;
 }
 
-static size_t WriteCallback(void* contents, size_t size, size_t nmemb, void* userp) {
-    ((std::string*)userp)->append((char*)contents, size * nmemb);
-    return size * nmemb;
-}
+std::vector<std::string> getTableNames(sqlite3 *db)
+{
+    std::vector<std::string> tables;
+    const char *sql = "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;";
+    sqlite3_stmt *stmt;
 
-void makeRequest(const char* url, Request* req) {
-    CURL* curl = curl_easy_init();
-    if (curl) {
-        std::string response;
-        std::string fullUrl = url;
-
-        if (!req->queryParams.empty()) {
-            fullUrl += "?";
-            for (const auto& [key, value] : req->queryParams) {
-                fullUrl += key + "=" + value + "&";
-            }
-            fullUrl.pop_back();
-        }
-
-        curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
-        curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, WriteCallback);
-        curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
-
-        // Set headers
-        struct curl_slist* headers = NULL;
-        for (const auto& [key, value] : req->headers) {
-            std::string header = key + ": " + value;
-            headers = curl_slist_append(headers, header.c_str());
-        }
-        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
-
-        switch (req->method) {
-            case HttpMethod::POST:
-                curl_easy_setopt(curl, CURLOPT_POST, 1L);
-                if (!req->body.empty()) {
-                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
-                }
-                break;
-            case HttpMethod::PUT:
-                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PUT");
-                if (!req->body.empty()) {
-                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
-                }
-                break;
-            case HttpMethod::DELETE:
-                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "DELETE");
-                break;
-            case HttpMethod::PATCH:
-                curl_easy_setopt(curl, CURLOPT_CUSTOMREQUEST, "PATCH");
-                if (!req->body.empty()) {
-                    curl_easy_setopt(curl, CURLOPT_POSTFIELDS, req->body.c_str());
-                }
-                break;
-            default:
-                curl_easy_setopt(curl, CURLOPT_HTTPGET, 1L);
-        }
-
-        CURLcode res = curl_easy_perform(curl);
-        if (res == CURLE_OK) {
-            req->response = response;
-            strncpy(responseBuffer, response.c_str(), sizeof(responseBuffer));
-        }
-
-        if (headers) {
-            curl_slist_free_all(headers);
-        }
-
-        curl_easy_cleanup(curl);
-    }
-}
-
-struct KeyValuePair {
-    bool enabled = true;
-    std::array<char, 128> key{};
-    std::array<char, 128> value{};
-
-    KeyValuePair() {
-        key.fill('\0');
-        value.fill('\0');
-    }
-};
-
-struct KeyValueEditor {
-    std::vector<KeyValuePair> buffers;
-
-    KeyValueEditor() {
-        KeyValuePair empty{};
-        buffers.push_back(empty);
-    }
-};
-
-static std::map<std::string, KeyValueEditor> editors;
-
-void renderKeyValueEditor(const std::string& title, std::map<std::string, std::string>& keyValuePairs) {
-    auto& editor = editors[title];
-    ImGui::PushID(title.c_str());
-
-    float availWidth = ImGui::GetContentRegionAvail().x;
-    float checkboxWidth = ImGui::GetFrameHeight();
-    float deleteButtonWidth = 60.0f;
-    float spacing = ImGui::GetStyle().ItemSpacing.x;
-    float inputWidth = (availWidth - checkboxWidth - deleteButtonWidth - spacing * 3) / 2.0f;
-
-    bool needNewEditor = false;
-
-    for (size_t i = 0; i < editor.buffers.size(); i++) {
-        ImGui::PushID(static_cast<int>(i));
-        auto& pair = editor.buffers[i];
-
-        ImGui::Checkbox("##Enabled", &pair.enabled);
-        ImGui::SameLine();
-
-        ImGui::PushItemWidth(inputWidth);
-        if (ImGui::InputText("##Key", pair.key.data(), pair.key.size() - 1,
-                           ImGuiInputTextFlags_CharsNoBlank | (pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly))) {
-            if (!pair.enabled && pair.key[0] != '\0') {
-                pair.enabled = true;
+    if (sqlite3_prepare_v2(db, sql, -1, &stmt, NULL) == SQLITE_OK)
+    {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            const char *tableName = (const char *)sqlite3_column_text(stmt, 0);
+            if (tableName)
+            {
+                tables.push_back(std::string(tableName));
             }
         }
-        if (ImGui::IsItemHovered() && pair.key[0] != '\0') {
-            ImGui::SetTooltip("%s", pair.key.data());
-        }
-
-        ImGui::SameLine();
-
-        // Use size-1 for buffer size to ensure space for null terminator
-        ImGui::InputText("##Value", pair.value.data(), pair.value.size() - 1,
-                       pair.enabled ? 0 : ImGuiInputTextFlags_ReadOnly);
-        if (ImGui::IsItemHovered() && pair.value[0] != '\0') {
-            ImGui::SetTooltip("%s", pair.value.data());
-        }
-        ImGui::PopItemWidth();
-
-        if (editor.buffers.size() > 1 && i < editor.buffers.size() - 1) {
-            ImGui::SameLine();
-            if (ImGui::Button("Delete", ImVec2(deleteButtonWidth, 0))) {
-                editor.buffers.erase(editor.buffers.begin() + i);
-                ImGui::PopID();
-                break;
-            }
-        }
-
-        if (i == editor.buffers.size() - 1 && (pair.key[0] != '\0' || pair.value[0] != '\0')) {
-            needNewEditor = true;
-        }
-
-        ImGui::PopID();
     }
-
-    if (needNewEditor) {
-        editor.buffers.push_back(KeyValuePair{});
-    }
-
-    keyValuePairs.clear();
-    for (const auto& pair : editor.buffers) {
-        if (pair.enabled && pair.key[0] != '\0') {
-            keyValuePairs[pair.key.data()] = pair.value.data();
-        }
-    }
-
-    ImGui::PopID();
+    sqlite3_finalize(stmt);
+    return tables;
 }
 
-void renderRequestPanel(std::shared_ptr<Request>& req) {
-    ImGui::PushID(req.get());
+std::vector<Column> getTableColumns(sqlite3 *db, const std::string &tableName)
+{
+    std::vector<Column> columns;
+    std::string sql = "PRAGMA table_info(" + tableName + ");";
+    sqlite3_stmt *stmt;
 
-    const char* methods[] = {"GET", "POST", "PUT", "DELETE", "PATCH"};
-    int currentMethod = static_cast<int>(req->method);
-    ImGui::PushItemWidth(100);
-    if (ImGui::Combo("##Method", &currentMethod, methods, IM_ARRAYSIZE(methods))) {
-        req->method = static_cast<HttpMethod>(currentMethod);
+    if (sqlite3_prepare_v2(db, sql.c_str(), -1, &stmt, NULL) == SQLITE_OK)
+    {
+        while (sqlite3_step(stmt) == SQLITE_ROW)
+        {
+            Column col;
+            col.name = (const char *)sqlite3_column_text(stmt, 1);
+            col.type = (const char *)sqlite3_column_text(stmt, 2);
+            col.isNotNull = sqlite3_column_int(stmt, 3) == 1;
+            col.isPrimaryKey = sqlite3_column_int(stmt, 5) == 1;
+            columns.push_back(col);
+        }
     }
-    ImGui::PopItemWidth();
+    sqlite3_finalize(stmt);
+    return columns;
+}
 
-    ImGui::SameLine();
-    ImGui::InputText("URL", urlBuffer, sizeof(urlBuffer));
+void refreshDatabaseTables(Database &db)
+{
+    if (!connectToDatabase(db))
+        return;
 
-    if (ImGui::Button("Send Request")) {
-        req->url = urlBuffer;
-        makeRequest(req->url.c_str(), req.get());
+    db.tables.clear();
+    std::vector<std::string> tableNames = getTableNames(db.connection);
+
+    for (const auto &tableName : tableNames)
+    {
+        Table table;
+        table.name = tableName;
+        table.columns = getTableColumns(db.connection, tableName);
+        db.tables.push_back(table);
+    }
+}
+
+std::string executeQuery(sqlite3 *db, const std::string &query)
+{
+    std::stringstream result;
+    sqlite3_stmt *stmt;
+
+    if (sqlite3_prepare_v2(db, query.c_str(), -1, &stmt, NULL) != SQLITE_OK)
+    {
+        return "Error: " + std::string(sqlite3_errmsg(db));
+    }
+
+    // Get column count and names
+    int columnCount = sqlite3_column_count(stmt);
+    if (columnCount > 0)
+    {
+        // Headers
+        for (int i = 0; i < columnCount; i++)
+        {
+            result << sqlite3_column_name(stmt, i);
+            if (i < columnCount - 1)
+                result << " | ";
+        }
+        result << "\n";
+
+        // Separator
+        for (int i = 0; i < columnCount; i++)
+        {
+            result << "----------";
+            if (i < columnCount - 1)
+                result << "-+-";
+        }
+        result << "\n";
+    }
+
+    // Data rows
+    int rowCount = 0;
+    while (sqlite3_step(stmt) == SQLITE_ROW && rowCount < 1000)
+    { // Limit to 1000 rows
+        for (int i = 0; i < columnCount; i++)
+        {
+            const char *text = (const char *)sqlite3_column_text(stmt, i);
+            result << (text ? text : "NULL");
+            if (i < columnCount - 1)
+                result << " | ";
+        }
+        result << "\n";
+        rowCount++;
+    }
+
+    if (rowCount == 0 && columnCount == 0)
+    {
+        result << "Query executed successfully. Rows affected: " << sqlite3_changes(db);
+    }
+    else if (rowCount == 1000)
+    {
+        result << "\n... (showing first 1000 rows)";
+    }
+
+    sqlite3_finalize(stmt);
+    return result.str();
+}
+
+void loadTableData(Tab &tab)
+{
+    if (tab.type != TabType::TABLE_VIEWER)
+        return;
+
+    // Find database
+    Database *db = nullptr;
+    for (auto &database : databases)
+    {
+        if (database->path == tab.databasePath && database->connected)
+        {
+            db = database.get();
+            break;
+        }
+    }
+
+    if (!db)
+        return;
+
+    // Get total row count
+    std::string countSql = "SELECT COUNT(*) FROM " + tab.tableName;
+    sqlite3_stmt *countStmt;
+    if (sqlite3_prepare_v2(db->connection, countSql.c_str(), -1, &countStmt, NULL) == SQLITE_OK)
+    {
+        if (sqlite3_step(countStmt) == SQLITE_ROW)
+        {
+            tab.totalRows = sqlite3_column_int(countStmt, 0);
+        }
+    }
+    sqlite3_finalize(countStmt);
+
+    // Get column names
+    tab.columnNames.clear();
+    std::string pragmaSql = "PRAGMA table_info(" + tab.tableName + ");";
+    sqlite3_stmt *pragmaStmt;
+    if (sqlite3_prepare_v2(db->connection, pragmaSql.c_str(), -1, &pragmaStmt, NULL) == SQLITE_OK)
+    {
+        while (sqlite3_step(pragmaStmt) == SQLITE_ROW)
+        {
+            tab.columnNames.push_back((const char *)sqlite3_column_text(pragmaStmt, 1));
+        }
+    }
+    sqlite3_finalize(pragmaStmt);
+
+    // Get data with pagination
+    int offset = tab.currentPage * tab.rowsPerPage;
+    std::string dataSql = "SELECT * FROM " + tab.tableName + " LIMIT " +
+                          std::to_string(tab.rowsPerPage) + " OFFSET " + std::to_string(offset);
+
+    tab.tableData.clear();
+    sqlite3_stmt *dataStmt;
+    if (sqlite3_prepare_v2(db->connection, dataSql.c_str(), -1, &dataStmt, NULL) == SQLITE_OK)
+    {
+        int columnCount = sqlite3_column_count(dataStmt);
+        while (sqlite3_step(dataStmt) == SQLITE_ROW)
+        {
+            std::vector<std::string> row;
+            for (int i = 0; i < columnCount; i++)
+            {
+                const char *text = (const char *)sqlite3_column_text(dataStmt, i);
+                row.push_back(text ? text : "NULL");
+            }
+            tab.tableData.push_back(row);
+        }
+    }
+    sqlite3_finalize(dataStmt);
+}
+
+void setupDefaultDockingLayout(ImGuiID dockspace_id)
+{
+    if (dockingLayoutInitialized)
+        return;
+
+    ImGui::DockBuilderRemoveNode(dockspace_id);
+    ImGui::DockBuilderAddNode(dockspace_id, ImGuiDockNodeFlags_DockSpace);
+    ImGui::DockBuilderSetNodeSize(dockspace_id, ImGui::GetMainViewport()->Size);
+
+    // Split the dockspace into left and right
+    ImGuiID dock_left, dock_right;
+    ImGui::DockBuilderSplitNode(dockspace_id, ImGuiDir_Left, 0.25f, &dock_left, &dock_right);
+
+    // Dock windows to specific nodes
+    ImGui::DockBuilderDockWindow("Databases", dock_left);
+    ImGui::DockBuilderDockWindow("Content", dock_right);
+
+    ImGui::DockBuilderFinish(dockspace_id);
+    dockingLayoutInitialized = true;
+}
+
+void openDatabaseFileDialog()
+{
+    nfdchar_t *outPath;
+    nfdfilteritem_t filterItem[2] = {{"SQLite Database", "db,sqlite,sqlite3"}, {"All Files", "*"}};
+
+    nfdresult_t result = NFD_OpenDialog(&outPath, filterItem, 2, NULL);
+    if (result == NFD_OKAY)
+    {
+        auto db = std::make_shared<Database>();
+        // Extract filename from path for display name
+        std::string path(outPath);
+        size_t lastSlash = path.find_last_of("/\\");
+        db->name = (lastSlash != std::string::npos) ? path.substr(lastSlash + 1) : path;
+        db->path = path;
+
+        // Try to connect and load tables
+        if (connectToDatabase(*db))
+        {
+            refreshDatabaseTables(*db);
+            databases.push_back(db);
+        }
+        else
+        {
+            std::cerr << "Failed to open database: " << path << std::endl;
+        }
+
+        // Free the path memory
+        NFD_FreePath(outPath);
+    }
+    else if (result == NFD_CANCEL)
+    {
+        // User cancelled, do nothing
+    }
+    else
+    {
+        std::cerr << "File dialog error: " << NFD_GetError() << std::endl;
+    }
+}
+
+void renderDatabaseSidebar()
+{
+    ImGui::Begin("Databases");
+
+    if (ImGui::Button("Open Database", ImVec2(-1, 0)))
+    {
+        openDatabaseFileDialog();
     }
 
     ImGui::Separator();
 
-    // Add static variable for panel height
-    static float topPanelHeight = ImGui::GetContentRegionAvail().y * 0.4f;
+    for (size_t i = 0; i < databases.size(); i++)
+    {
+        auto &db = databases[i];
 
-    // Create top panel for request details
-    ImGui::BeginChild("TopPanel", ImVec2(-1.0f, topPanelHeight), true);
-    if (ImGui::BeginTabBar("RequestDetailsTabs")) {
-        if (ImGui::BeginTabItem("Query Params")) {
-            renderKeyValueEditor("Query Parameters", req->queryParams);
-            ImGui::EndTabItem();
+        // Database node
+        ImGuiTreeNodeFlags dbFlags = ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
+        if (selectedDatabase == (int)i)
+        {
+            dbFlags |= ImGuiTreeNodeFlags_Selected;
         }
-        if (ImGui::BeginTabItem("Headers")) {
-            renderKeyValueEditor("Headers", req->headers);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Body")) {
-            ImGui::InputTextMultiline("##Body", bodyBuffer, sizeof(bodyBuffer),
-                ImVec2(-1.0f, -1.0f));
-            req->body = bodyBuffer;
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
-    }
-    ImGui::EndChild();
 
-    // splitter
-    ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.5f, 0.5f, 0.5f, 0.3f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4(0.7f, 0.7f, 0.7f, 0.3f));
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4(0.9f, 0.9f, 0.9f, 0.3f));
-    ImGui::Button("##splitter", ImVec2(-1, 4.0f));
-    if (ImGui::IsItemActive()) {
-        float mouseDelta = ImGui::GetIO().MouseDelta.y;
-        if (mouseDelta != 0.0f) {
-            topPanelHeight += mouseDelta;
-            // Add minimum and maximum constraints
-            float minHeight = 100.0f;
-            float maxHeight = ImGui::GetContentRegionAvail().y - 100.0f;
-            topPanelHeight = std::clamp(topPanelHeight, minHeight, maxHeight);
-        }
-    }
-    if (ImGui::IsItemHovered())
-        ImGui::SetMouseCursor(ImGuiMouseCursor_ResizeNS);
-    ImGui::PopStyleColor(3);
+        bool dbOpen = ImGui::TreeNodeEx(db->name.c_str(), dbFlags);
 
-    // Response panel below
-    ImGui::BeginChild("ResponsePanel", ImVec2(-1.0f, -1.0f), true);
-    if (ImGui::CollapsingHeader("Response", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::InputTextMultiline("##Response", responseBuffer, sizeof(responseBuffer),
-            ImVec2(-1.0f, -1.0f),
-            ImGuiInputTextFlags_ReadOnly);
-    }
-    ImGui::EndChild();
-
-    ImGui::PopID();
-}
-
-void renderRequestList() {
-    ImGui::Begin("Requests");
-    for (size_t i = 0; i < requests.size(); i++) {
-        auto& req = requests[i];
-
-        // Push method color
-        ImGui::PushStyleColor(ImGuiCol_Text, getMethodColors().at(req->method));
-
-        std::string label = std::string(methodToString(req->method)) + " " + req->name;
-        if (ImGui::Selectable(label.c_str(), selectedRequest == i)) {
-            selectedRequest = i;
-            req->open = true;
-            strncpy(urlBuffer, req->url.c_str(), sizeof(urlBuffer));
-            std::string queryParamsStr;
-            for (const auto& [key, value] : req->queryParams) {
-                queryParamsStr += key + "=" + value + "&";
+        if (ImGui::IsItemClicked())
+        {
+            selectedDatabase = i;
+            selectedTable = -1;
+            if (!db->connected)
+            {
+                refreshDatabaseTables(*db);
             }
-            if (!queryParamsStr.empty()) {
-                queryParamsStr.pop_back();
-            }
-            strncpy(queryParamsBuffer, queryParamsStr.c_str(), sizeof(queryParamsBuffer));
-            std::string headersStr;
-            for (const auto& [key, value] : req->headers) {
-                headersStr += key + ": " + value + "\n";
-            }
-            strncpy(headersBuffer, headersStr.c_str(), sizeof(headersBuffer));
-            strncpy(bodyBuffer, req->body.c_str(), sizeof(bodyBuffer));
-            strncpy(responseBuffer, req->response.c_str(), sizeof(responseBuffer));
         }
 
-        ImGui::PopStyleColor();
+        // Context menu for database
+        if (ImGui::BeginPopupContextItem())
+        {
+            if (ImGui::MenuItem("Refresh"))
+            {
+                refreshDatabaseTables(*db);
+            }
+            if (ImGui::MenuItem("New SQL Editor"))
+            {
+                auto tab = std::make_shared<Tab>("SQL Editor " + std::to_string(tabs.size() + 1), TabType::SQL_EDITOR);
+                tabs.push_back(tab);
+            }
+            if (ImGui::MenuItem("Disconnect"))
+            {
+                disconnectDatabase(*db);
+            }
+            ImGui::EndPopup();
+        }
+
+        if (dbOpen)
+        {
+            // Tables
+            for (size_t j = 0; j < db->tables.size(); j++)
+            {
+                auto &table = db->tables[j];
+
+                ImGuiTreeNodeFlags tableFlags = ImGuiTreeNodeFlags_Leaf | ImGuiTreeNodeFlags_NoTreePushOnOpen;
+                if (selectedDatabase == (int)i && selectedTable == (int)j)
+                {
+                    tableFlags |= ImGuiTreeNodeFlags_Selected;
+                }
+
+                ImGui::TreeNodeEx(table.name.c_str(), tableFlags);
+
+                if (ImGui::IsItemClicked())
+                {
+                    selectedDatabase = i;
+                    selectedTable = j;
+                }
+
+                // Double-click to open table viewer
+                if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0))
+                {
+                    auto tab = std::make_shared<Tab>(table.name, TabType::TABLE_VIEWER);
+                    tab->databasePath = db->path;
+                    tab->tableName = table.name;
+                    loadTableData(*tab);
+                    tabs.push_back(tab);
+                }
+
+                // Context menu for table
+                if (ImGui::BeginPopupContextItem())
+                {
+                    if (ImGui::MenuItem("View Data"))
+                    {
+                        auto tab = std::make_shared<Tab>(table.name, TabType::TABLE_VIEWER);
+                        tab->databasePath = db->path;
+                        tab->tableName = table.name;
+                        loadTableData(*tab);
+                        tabs.push_back(tab);
+                    }
+                    if (ImGui::MenuItem("Show Structure"))
+                    {
+                        // TODO: Show table structure in a tab
+                    }
+                    ImGui::EndPopup();
+                }
+            }
+            ImGui::TreePop();
+        }
     }
 
-    if (ImGui::Button("New Request")) {
-        auto req = std::make_shared<Request>();
-        req->name = "Request " + std::to_string(requests.size() + 1);
-        requests.push_back(req);
-        selectedRequest = requests.size() - 1;
-    }
     ImGui::End();
 }
 
-void ToggleButton(const char* str_id, bool* v)
+void renderSQLEditor(Tab &tab)
 {
-	ImVec4* colors = ImGui::GetStyle().Colors;
-	ImVec2 p = ImGui::GetCursorScreenPos();
-	ImDrawList* draw_list = ImGui::GetWindowDrawList();
+    ImGui::Text("SQL Editor");
+    ImGui::Separator();
 
-	float height = ImGui::GetFrameHeight();
-	float width = height * 1.55f;
-	float radius = height * 0.50f;
+    // SQL input
+    ImGui::InputTextMultiline("##SQL", sqlBuffer, sizeof(sqlBuffer),
+                              ImVec2(-1, ImGui::GetContentRegionAvail().y * 0.3f));
+    tab.sqlQuery = sqlBuffer;
 
-	ImGui::InvisibleButton(str_id, ImVec2(width, height));
-	if (ImGui::IsItemClicked()) *v = !*v;
-	ImGuiContext& gg = *GImGui;
-	float ANIM_SPEED = 0.085f;
-	if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id))// && g.LastActiveIdTimer < ANIM_SPEED)
-		float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
-	if (ImGui::IsItemHovered())
-		draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? colors[ImGuiCol_ButtonActive] : ImVec4(0.78f, 0.78f, 0.78f, 1.0f)), height * 0.5f);
-	else
-		draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height), ImGui::GetColorU32(*v ? colors[ImGuiCol_Button] : ImVec4(0.85f, 0.85f, 0.85f, 1.0f)), height * 0.50f);
-	draw_list->AddCircleFilled(ImVec2(p.x + radius + (*v ? 1 : 0) * (width - radius * 2.0f), p.y + radius), radius - 1.5f, IM_COL32(255, 255, 255, 255));
+    if (ImGui::Button("Execute Query"))
+    {
+        if (selectedDatabase >= 0 && selectedDatabase < (int)databases.size())
+        {
+            auto &db = databases[selectedDatabase];
+            if (connectToDatabase(*db))
+            {
+                tab.queryResult = executeQuery(db->connection, tab.sqlQuery);
+                strncpy(queryResultBuffer, tab.queryResult.c_str(), sizeof(queryResultBuffer) - 1);
+                queryResultBuffer[sizeof(queryResultBuffer) - 1] = '\0';
+            }
+        }
+    }
+
+    ImGui::SameLine();
+    if (ImGui::Button("Clear"))
+    {
+        memset(sqlBuffer, 0, sizeof(sqlBuffer));
+        tab.sqlQuery.clear();
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Results:");
+
+    // Results display
+    ImGui::InputTextMultiline("##Results", queryResultBuffer, sizeof(queryResultBuffer),
+                              ImVec2(-1, -1), ImGuiInputTextFlags_ReadOnly);
 }
 
-int main() {
-    std::cout << "Starting application..." << std::endl;
+void renderTableViewer(Tab &tab)
+{
+    ImGui::Text("Table: %s", tab.tableName.c_str());
+    ImGui::Separator();
 
-    if (!glfwInit()) {
+    // Pagination controls
+    int totalPages = (tab.totalRows + tab.rowsPerPage - 1) / tab.rowsPerPage;
+
+    if (ImGui::Button("<<") && tab.currentPage > 0)
+    {
+        tab.currentPage = 0;
+        loadTableData(tab);
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button("<") && tab.currentPage > 0)
+    {
+        tab.currentPage--;
+        loadTableData(tab);
+    }
+    ImGui::SameLine();
+
+    ImGui::Text("Page %d of %d (%d rows total)", tab.currentPage + 1, totalPages, tab.totalRows);
+    ImGui::SameLine();
+
+    if (ImGui::Button(">") && tab.currentPage < totalPages - 1)
+    {
+        tab.currentPage++;
+        loadTableData(tab);
+    }
+    ImGui::SameLine();
+
+    if (ImGui::Button(">>") && tab.currentPage < totalPages - 1)
+    {
+        tab.currentPage = totalPages - 1;
+        loadTableData(tab);
+    }
+
+    ImGui::Separator();
+
+    // Table display
+    if (!tab.columnNames.empty() && !tab.tableData.empty())
+    {
+        if (ImGui::BeginTable("TableData", tab.columnNames.size(),
+                              ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg |
+                                  ImGuiTableFlags_ScrollX | ImGuiTableFlags_ScrollY))
+        {
+
+            // Headers
+            for (const auto &colName : tab.columnNames)
+            {
+                ImGui::TableSetupColumn(colName.c_str());
+            }
+            ImGui::TableHeadersRow();
+
+            // Data rows
+            for (const auto &row : tab.tableData)
+            {
+                ImGui::TableNextRow();
+                for (size_t i = 0; i < row.size() && i < tab.columnNames.size(); i++)
+                {
+                    ImGui::TableNextColumn();
+                    ImGui::Text("%s", row[i].c_str());
+                }
+            }
+
+            ImGui::EndTable();
+        }
+    }
+    else
+    {
+        ImGui::Text("No data to display");
+    }
+}
+
+void ToggleButton(const char *str_id, bool *v)
+{
+    ImVec4 *colors = ImGui::GetStyle().Colors;
+    ImVec2 p = ImGui::GetCursorScreenPos();
+    ImDrawList *draw_list = ImGui::GetWindowDrawList();
+
+    float height = ImGui::GetFrameHeight();
+    float width = height * 1.55f;
+    float radius = height * 0.50f;
+
+    ImGui::InvisibleButton(str_id, ImVec2(width, height));
+    if (ImGui::IsItemClicked())
+        *v = !*v;
+    ImGuiContext &gg = *GImGui;
+    float ANIM_SPEED = 0.085f;
+    if (gg.LastActiveId == gg.CurrentWindow->GetID(str_id))
+        float t_anim = ImSaturate(gg.LastActiveIdTimer / ANIM_SPEED);
+    if (ImGui::IsItemHovered())
+        draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height),
+                                 ImGui::GetColorU32(*v ? colors[ImGuiCol_ButtonActive] : ImVec4(0.78f, 0.78f, 0.78f, 1.0f)), height * 0.5f);
+    else
+        draw_list->AddRectFilled(p, ImVec2(p.x + width, p.y + height),
+                                 ImGui::GetColorU32(*v ? colors[ImGuiCol_Button] : ImVec4(0.85f, 0.85f, 0.85f, 1.0f)), height * 0.50f);
+    draw_list->AddCircleFilled(ImVec2(p.x + radius + (*v ? 1 : 0) * (width - radius * 2.0f), p.y + radius),
+                               radius - 1.5f, IM_COL32(255, 255, 255, 255));
+}
+
+int main()
+{
+    std::cout << "Starting Database Client..." << std::endl;
+
+    if (!glfwInit())
+    {
         std::cerr << "Failed to initialize GLFW" << std::endl;
         return -1;
     }
@@ -388,8 +621,9 @@ int main() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    GLFWwindow* window = glfwCreateWindow(1280, 720, "API Client", NULL, NULL);
-    if (!window) {
+    GLFWwindow *window = glfwCreateWindow(1280, 720, "Database Client", NULL, NULL);
+    if (!window)
+    {
         std::cerr << "Failed to create GLFW window" << std::endl;
         glfwTerminate();
         return -1;
@@ -402,7 +636,7 @@ int main() {
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
-    ImGuiIO& io = ImGui::GetIO();
+    ImGuiIO &io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;
     ImGui::StyleColorsDark();
     Theme::ApplyTheme(Theme::MOCHA);
@@ -412,14 +646,19 @@ int main() {
 
     std::cout << "ImGui initialized" << std::endl;
 
+    // Initialize Native File Dialog
+    NFD_Init();
+
     glClearColor(
         dark_theme ? 0.110f : 0.957f,
         dark_theme ? 0.110f : 0.957f,
         dark_theme ? 0.137f : 0.957f,
-        0.98f
-    );
+        0.98f);
 
-    while (!glfwWindowShouldClose(window)) {
+    // No sample database - users can open their own databases
+
+    while (!glfwWindowShouldClose(window))
+    {
         glfwPollEvents();
 
         ImGui_ImplOpenGL3_NewFrame();
@@ -427,7 +666,7 @@ int main() {
         ImGui::NewFrame();
 
         // DockSpace setup
-        const ImGuiViewport* viewport = ImGui::GetMainViewport();
+        const ImGuiViewport *viewport = ImGui::GetMainViewport();
         ImGui::SetNextWindowPos(viewport->Pos);
         ImGui::SetNextWindowSize(viewport->Size);
         ImGui::SetNextWindowViewport(viewport->ID);
@@ -436,22 +675,44 @@ int main() {
         ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0.0f, 0.0f));
 
         ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking |
-            ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
-            ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
+                                        ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
+                                        ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus | ImGuiWindowFlags_NoNavFocus;
 
         ImGui::Begin("DockSpace Demo", nullptr, window_flags);
 
-        // theme toggle
-        if (ImGui::BeginMenuBar()) {
-            if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("New Request", "Ctrl+N")) {
-                    auto req = std::make_shared<Request>();
-                    req->name = "Request " + std::to_string(requests.size() + 1);
-                    requests.push_back(req);
-                    selectedRequest = requests.size() - 1;
+        // Menu bar
+        if (ImGui::BeginMenuBar())
+        {
+            if (ImGui::BeginMenu("File"))
+            {
+                if (ImGui::MenuItem("Open Database", "Ctrl+O"))
+                {
+                    openDatabaseFileDialog();
                 }
-                if (ImGui::MenuItem("Exit", "Alt+F4")) {
+                if (ImGui::MenuItem("New SQL Editor", "Ctrl+N"))
+                {
+                    auto tab = std::make_shared<Tab>("SQL Editor " + std::to_string(tabs.size() + 1), TabType::SQL_EDITOR);
+                    tabs.push_back(tab);
+                }
+                ImGui::Separator();
+                if (ImGui::MenuItem("Exit", "Alt+F4"))
+                {
                     glfwSetWindowShouldClose(window, true);
+                }
+                ImGui::EndMenu();
+            }
+
+            if (ImGui::BeginMenu("View"))
+            {
+                if (ImGui::MenuItem("Refresh All"))
+                {
+                    for (auto &db : databases)
+                    {
+                        if (db->connected)
+                        {
+                            refreshDatabaseTables(*db);
+                        }
+                    }
                 }
                 ImGui::EndMenu();
             }
@@ -462,7 +723,8 @@ int main() {
             ImGui::Text("Dark");
             ImGui::SameLine();
             ToggleButton("##ThemeToggle", &dark_theme);
-            if (ImGui::IsItemClicked()) {
+            if (ImGui::IsItemClicked())
+            {
                 Theme::ApplyTheme(dark_theme ? Theme::MOCHA : Theme::LATTE);
             }
 
@@ -473,26 +735,53 @@ int main() {
         ImGuiID dockspace_id = ImGui::GetID("MyDockSpace");
         ImGui::DockSpace(dockspace_id, ImVec2(0.0f, 0.0f));
 
-        // Requests panel
-        renderRequestList();
+        // Setup default docking layout
+        setupDefaultDockingLayout(dockspace_id);
 
+        // Database sidebar
+        renderDatabaseSidebar();
+
+        // Main content area
         ImGui::Begin("Content");
-        if (requests.empty()) {
+        if (tabs.empty())
+        {
             ImGui::SetCursorPosY(ImGui::GetWindowHeight() / 2);
             float buttonWidth = 200;
             ImGui::SetCursorPosX((ImGui::GetWindowWidth() - buttonWidth) / 2);
-            if (ImGui::Button("Create First Request", ImVec2(buttonWidth, 0))) {
-                auto req = std::make_shared<Request>();
-                req->name = "Request 1";
-                requests.push_back(req);
-                selectedRequest = 0;
+            if (ImGui::Button("Create First SQL Editor", ImVec2(buttonWidth, 0)))
+            {
+                auto tab = std::make_shared<Tab>("SQL Editor 1", TabType::SQL_EDITOR);
+                tabs.push_back(tab);
             }
-        } else {
-            if (ImGui::BeginTabBar("RequestTabs")) {
-                for (auto& req : requests) {
-                    if (req->open && ImGui::BeginTabItem(req->name.c_str(), &req->open)) {
-                        renderRequestPanel(req);
+        }
+        else
+        {
+            if (ImGui::BeginTabBar("ContentTabs"))
+            {
+                for (auto it = tabs.begin(); it != tabs.end();)
+                {
+                    auto &tab = *it;
+                    if (tab->open && ImGui::BeginTabItem(tab->name.c_str(), &tab->open))
+                    {
+                        switch (tab->type)
+                        {
+                        case TabType::SQL_EDITOR:
+                            renderSQLEditor(*tab);
+                            break;
+                        case TabType::TABLE_VIEWER:
+                            renderTableViewer(*tab);
+                            break;
+                        }
                         ImGui::EndTabItem();
+                    }
+
+                    if (!tab->open)
+                    {
+                        it = tabs.erase(it);
+                    }
+                    else
+                    {
+                        ++it;
                     }
                 }
                 ImGui::EndTabBar();
@@ -513,6 +802,15 @@ int main() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
         glfwSwapBuffers(window);
     }
+
+    // Cleanup
+    for (auto &db : databases)
+    {
+        disconnectDatabase(*db);
+    }
+
+    // Cleanup Native File Dialog
+    NFD_Quit();
 
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplGlfw_Shutdown();

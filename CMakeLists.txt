@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.15)
-project(api-client)
+project(db-client)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -7,8 +7,11 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 # Dependencies
 add_subdirectory(external/json)
 
-# Find system CURL
-find_package(CURL REQUIRED)
+# Find SQLite3
+find_package(SQLite3 REQUIRED)
+
+# Native File Dialog Extended (as git submodule)
+add_subdirectory(external/nativefiledialog-extended)
 
 # ImGui + GLFW + OpenGL
 find_package(OpenGL REQUIRED)
@@ -41,6 +44,7 @@ target_include_directories(${PROJECT_NAME} PRIVATE
 target_link_libraries(${PROJECT_NAME} PRIVATE
     OpenGL::GL
     glfw
-    CURL::libcurl
+    SQLite::SQLite3
     nlohmann_json::nlohmann_json
+    nfd
 )
