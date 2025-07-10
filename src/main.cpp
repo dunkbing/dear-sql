@@ -680,7 +680,7 @@ void ToggleButton(const char *str_id, bool *v)
 
 int main()
 {
-    std::cout << "Starting Database Client..." << std::endl;
+    std::cout << "Starting Dear SQL..." << std::endl;
 
     if (!glfwInit())
     {
@@ -693,7 +693,7 @@ int main()
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
     glfwWindowHint(GLFW_OPENGL_FORWARD_COMPAT, GL_TRUE);
 
-    GLFWwindow *window = glfwCreateWindow(1280, 720, "Database Client", NULL, NULL);
+    GLFWwindow *window = glfwCreateWindow(1280, 720, "Dear SQL", NULL, NULL);
     if (!window)
     {
         std::cerr << "Failed to create GLFW window" << std::endl;
@@ -716,7 +716,7 @@ int main()
     fontConfig.MergeMode = false;
 
     // Try to load fonts from assets folder first, then fallback to system fonts
-    std::vector<std::string> fontPaths =  {
+    std::vector<std::string> fontPaths = {
 // System fonts as fallback
 #ifdef __APPLE__
         "/System/Library/Fonts/Hiragino Sans GB.ttc",
