@@ -2,8 +2,22 @@
 
 #include "imgui.h"
 #include "imgui_impl_glfw.h"
-#include "imgui_impl_opengl3.h"
-#include <GLFW/glfw3.h>
+
+#ifdef USE_METAL_BACKEND
+    #include "imgui_impl_metal.h"
+    #include <GLFW/glfw3.h>
+    #define GLFW_EXPOSE_NATIVE_COCOA
+    #include <GLFW/glfw3native.h>
+    // Forward declarations for Metal types (avoid Objective-C headers in C++)
+    #ifndef __OBJC__
+        typedef void* MetalDevice;
+        typedef void* MetalCommandQueue;
+        typedef void* MetalLayer;
+    #endif
+#elif defined(USE_OPENGL_BACKEND)
+    #include "imgui_impl_opengl3.h"
+    #include <GLFW/glfw3.h>
+#endif
 #include <memory>
 #include <vector>
 
@@ -64,6 +78,19 @@ private:
     std::unique_ptr<TabManager> tabManager;
     std::unique_ptr<DatabaseSidebar> databaseSidebar;
     std::unique_ptr<FileDialog> fileDialog;
+
+#ifdef USE_METAL_BACKEND
+    // Metal-specific components (using void* for C++ compatibility)
+    #ifdef __OBJC__
+        id metalDevice = nil;
+        id metalCommandQueue = nil;
+        id metalLayer = nil;
+    #else
+        MetalDevice metalDevice = nullptr;
+        MetalCommandQueue metalCommandQueue = nullptr;
+        MetalLayer metalLayer = nullptr;
+    #endif
+#endif
 
     // Application state
     bool darkTheme = true;

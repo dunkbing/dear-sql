@@ -8,7 +8,12 @@
 #include <iostream>
 #include <fstream>
 #include <imgui_internal.h>
-#include <glfw3.h>
+
+#ifdef USE_METAL_BACKEND
+    #import <Metal/Metal.h>
+    #import <QuartzCore/QuartzCore.h>
+    #import <Foundation/Foundation.h>
+#endif
 
 Application &Application::getInstance()
 {
@@ -42,7 +47,7 @@ bool Application::initialize()
     databaseSidebar = std::make_unique<DatabaseSidebar>();
     fileDialog = std::make_unique<FileDialog>();
 
-    std::cout << "Application initialized successfully (with OpenGL backend)" << std::endl;
+    std::cout << "Application initialized successfully (with Metal backend)" << std::endl;
     return true;
 }
 
@@ -62,7 +67,7 @@ void Application::run()
 
 #ifdef USE_METAL_BACKEND
         // Get the Metal drawable
-        id<CAMetalDrawable> drawable = [metalLayer nextDrawable];
+        id<CAMetalDrawable> drawable = [(CAMetalLayer*)metalLayer nextDrawable];
         if (!drawable)
         {
             continue;
@@ -81,7 +86,7 @@ void Application::run()
         renderPassDescriptor.colorAttachments[0].storeAction = MTLStoreActionStore;
 
         // Create command buffer
-        id<MTLCommandBuffer> commandBuffer = [metalCommandQueue commandBuffer];
+        id<MTLCommandBuffer> commandBuffer = [(id<MTLCommandQueue>)metalCommandQueue commandBuffer];
 
         // Create render command encoder
         id<MTLRenderCommandEncoder> renderEncoder = [commandBuffer renderCommandEncoderWithDescriptor:renderPassDescriptor];
@@ -102,7 +107,7 @@ void Application::run()
 
 #ifdef USE_METAL_BACKEND
         // Update Metal layer drawable size
-        metalLayer.drawableSize = CGSizeMake(display_w, display_h);
+        ((CAMetalLayer*)metalLayer).drawableSize = CGSizeMake(display_w, display_h);
 
         // Render ImGui draw data
         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), commandBuffer, renderEncoder);
@@ -203,7 +208,7 @@ bool Application::initializeGLFW()
         return false;
     }
 
-    metalCommandQueue = [metalDevice newCommandQueue];
+    metalCommandQueue = [(id<MTLDevice>)metalDevice newCommandQueue];
     if (!metalCommandQueue)
     {
         std::cerr << "Failed to create Metal command queue" << std::endl;
@@ -212,11 +217,12 @@ bool Application::initializeGLFW()
 
     // Set up Metal layer
     NSWindow *nsWindow = glfwGetCocoaWindow(window);
-    metalLayer = [CAMetalLayer layer];
-    metalLayer.device = metalDevice;
-    metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
-    nsWindow.contentView.layer = metalLayer;
+    CAMetalLayer *layer = [CAMetalLayer layer];
+    layer.device = (id<MTLDevice>)metalDevice;
+    layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+    nsWindow.contentView.layer = layer;
     nsWindow.contentView.wantsLayer = YES;
+    metalLayer = layer;
 
     std::cout << "Metal device and layer initialized successfully" << std::endl;
 #elif defined(USE_OPENGL_BACKEND)
@@ -241,8 +247,8 @@ bool Application::initializeImGui()
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 
 #ifdef USE_METAL_BACKEND
-    ImGui_ImplGlfw_InitForMetal(window, true);
-    ImGui_ImplMetal_Init(metalDevice);
+    ImGui_ImplGlfw_InitForOther(window, true);
+    ImGui_ImplMetal_Init((id<MTLDevice>)metalDevice);
     std::cout << "ImGui initialized with Metal backend" << std::endl;
 #elif defined(USE_OPENGL_BACKEND)
     ImGui_ImplGlfw_InitForOpenGL(window, true);
