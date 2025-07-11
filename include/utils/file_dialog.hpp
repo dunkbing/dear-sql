@@ -16,7 +16,7 @@ public:
     static void cleanup();
 
     // File operations only
-    std::shared_ptr<DatabaseInterface> openSQLiteFile();
+    static std::shared_ptr<DatabaseInterface> openSQLiteFile();
 
 private:
     static bool isInitialized;

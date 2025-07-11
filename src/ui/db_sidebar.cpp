@@ -22,7 +22,6 @@ void DatabaseSidebar::render() {
     // Check if dialog completed and get result
     auto db = connectionDialog.getResult();
     if (db) {
-        // Try to connect and load tables
         if (db->connect()) {
             db->refreshTables();
             std::cout << "Adding database to list. Tables loaded: " << db->getTables().size()
@@ -43,22 +42,22 @@ void DatabaseSidebar::render() {
     ImGui::End();
 }
 
-void DatabaseSidebar::renderDatabaseNode(size_t databaseIndex) {
+void DatabaseSidebar::renderDatabaseNode(const size_t databaseIndex) {
     auto &app = Application::getInstance();
-    auto &databases = app.getDatabases();
+    const auto &databases = app.getDatabases();
     auto &db = databases[databaseIndex];
 
     // Database node
     ImGuiTreeNodeFlags dbFlags =
         ImGuiTreeNodeFlags_OpenOnArrow | ImGuiTreeNodeFlags_OpenOnDoubleClick;
-    if (app.getSelectedDatabase() == (int)databaseIndex) {
+    if (app.getSelectedDatabase() == static_cast<int>(databaseIndex)) {
         dbFlags |= ImGuiTreeNodeFlags_Selected;
     }
 
     bool dbOpen = ImGui::TreeNodeEx(db->getName().c_str(), dbFlags);
 
     if (ImGui::IsItemClicked()) {
-        app.setSelectedDatabase(databaseIndex);
+        app.setSelectedDatabase(static_cast<int>(databaseIndex));
         app.setSelectedTable(-1);
     }
 

@@ -57,7 +57,7 @@ public:
     int getSelectedDatabase() const {
         return selectedDatabase;
     }
-    void setSelectedDatabase(int index) {
+    void setSelectedDatabase(const int index) {
         selectedDatabase = index;
     }
     int getSelectedTable() const {

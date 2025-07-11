@@ -30,8 +30,5 @@ cmake-build-*/
 .AppleDouble
 .LSOverride
 
-# Dependencies
-external/*/
-
 # Generated files
 compile_commands.json

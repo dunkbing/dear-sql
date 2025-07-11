@@ -21,7 +21,7 @@ void DatabaseConnectionDialog::showDialog() {
 }
 
 void DatabaseConnectionDialog::renderTypeSelection() {
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(350, 200), ImGuiCond_Appearing);
 
@@ -65,7 +65,7 @@ void DatabaseConnectionDialog::renderTypeSelection() {
 }
 
 void DatabaseConnectionDialog::renderPostgreSQLConnection() {
-    ImVec2 center = ImGui::GetMainViewport()->GetCenter();
+    const ImVec2 center = ImGui::GetMainViewport()->GetCenter();
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_Appearing);
 
@@ -117,7 +117,6 @@ void DatabaseConnectionDialog::reset() {
     isOpen = false;
     showingTypeSelection = false;
     showingPostgreSQLConnection = false;
-    result = nullptr;
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
