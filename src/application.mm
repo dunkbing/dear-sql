@@ -387,8 +387,11 @@ void Application::setupFonts() {
         }
     }
 
-    // Build the font atlas
+    // Build the font atlas only for OpenGL backend
+    // Metal backend handles this automatically
+#ifdef USE_OPENGL_BACKEND
     io.Fonts->Build();
+#endif
 }
 
 void Application::setupDockingLayout(ImGuiID dockspaceId) {

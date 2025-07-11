@@ -2,7 +2,6 @@
 
 #include "database/db_interface.hpp"
 #include <memory>
-#include <string>
 
 class DatabaseInterface;
 
@@ -17,7 +16,6 @@ public:
 
     // File operations only
     static std::shared_ptr<DatabaseInterface> openSQLiteFile();
-
 private:
     static bool isInitialized;
 };

@@ -47,6 +47,6 @@ private:
     void renderPostgreSQLConnection();
     
     // Helper functions
-    std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
+    static std::shared_ptr<DatabaseInterface> createSQLiteDatabase();
     std::shared_ptr<DatabaseInterface> createPostgreSQLDatabase();
 };

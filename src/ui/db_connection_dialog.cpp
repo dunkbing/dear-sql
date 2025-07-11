@@ -50,8 +50,6 @@ void DatabaseConnectionDialog::renderTypeSelection() {
                 // PostgreSQL - show connection dialog
                 showingTypeSelection = false;
                 showingPostgreSQLConnection = true;
-                ImGui::CloseCurrentPopup();
-                ImGui::OpenPopup("PostgreSQL Connection");
             }
         }
         ImGui::SameLine();
@@ -69,18 +67,28 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
     ImGui::SetNextWindowPos(center, ImGuiCond_Appearing, ImVec2(0.5f, 0.5f));
     ImGui::SetNextWindowSize(ImVec2(400, 350), ImGuiCond_Appearing);
 
-    if (ImGui::BeginPopupModal("PostgreSQL Connection", nullptr,
+    if (ImGui::BeginPopupModal("Connect to Database", nullptr,
                                ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::Text("Enter PostgreSQL connection details:");
         ImGui::Separator();
         ImGui::Spacing();
 
+        // Add visual styling for input fields
+        ImGui::PushStyleVar(ImGuiStyleVar_FrameBorderSize, 1.0f);
+        ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(0.5f, 0.5f, 0.5f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBg, ImVec4(0.2f, 0.2f, 0.2f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgHovered, ImVec4(0.3f, 0.3f, 0.3f, 0.8f));
+        ImGui::PushStyleColor(ImGuiCol_FrameBgActive, ImVec4(0.4f, 0.4f, 0.4f, 0.8f));
+        
         ImGui::InputText("Connection Name", connectionName, sizeof(connectionName));
         ImGui::InputText("Host", host, sizeof(host));
         ImGui::InputInt("Port", &port);
         ImGui::InputText("Database", database, sizeof(database));
         ImGui::InputText("Username", username, sizeof(username));
         ImGui::InputText("Password", password, sizeof(password), ImGuiInputTextFlags_Password);
+        
+        ImGui::PopStyleColor(4);
+        ImGui::PopStyleVar();
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -94,8 +102,6 @@ void DatabaseConnectionDialog::renderPostgreSQLConnection() {
         if (ImGui::Button("Back", ImVec2(100, 0))) {
             showingPostgreSQLConnection = false;
             showingTypeSelection = true;
-            ImGui::CloseCurrentPopup();
-            ImGui::OpenPopup("Connect to Database");
         }
         ImGui::SameLine();
         if (ImGui::Button("Cancel", ImVec2(100, 0))) {
@@ -120,9 +126,7 @@ void DatabaseConnectionDialog::reset() {
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createSQLiteDatabase() {
-    // Use FileDialog to open SQLite file
-    FileDialog fileDialog;
-    return fileDialog.openSQLiteFile();
+    return FileDialog::openSQLiteFile();
 }
 
 std::shared_ptr<DatabaseInterface> DatabaseConnectionDialog::createPostgreSQLDatabase() {
