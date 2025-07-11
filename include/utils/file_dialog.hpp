@@ -1,9 +1,10 @@
 #pragma once
 
+#include "database/db_interface.hpp"
 #include <memory>
 #include <string>
 
-class Database;
+class DatabaseInterface;
 
 class FileDialog {
 public:
@@ -14,8 +15,8 @@ public:
     static bool initialize();
     static void cleanup();
 
-    // Database file selection
-    std::shared_ptr<Database> openDatabaseDialog();
+    // File operations only
+    std::shared_ptr<DatabaseInterface> openSQLiteFile();
 
 private:
     static bool isInitialized;

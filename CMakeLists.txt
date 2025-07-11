@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.15)
+cmake_minimum_required(VERSION 3.12)
 project(dear-sql)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -9,6 +9,9 @@ add_subdirectory(external/json)
 
 # Find SQLite3
 find_package(SQLite3 REQUIRED)
+
+# Add libpqxx as subdirectory with specific compiler flags
+add_subdirectory(external/libpqxx build-pqxx)
 
 # Native File Dialog Extended (as git submodule)
 add_subdirectory(external/nativefiledialog-extended)
@@ -65,15 +68,19 @@ set(APP_SOURCES
     src/main.cpp
 
     # Database
-    src/database/database.cpp
+    src/database/db.cpp
     src/database/query_executor.cpp
+    src/database/sqlite.cpp
+    src/database/postgresql.cpp
+    src/database/db_factory.cpp
 
     # Tabs
     src/tabs/tab.cpp
     src/tabs/tab_manager.cpp
 
     # UI
-    src/ui/database_sidebar.cpp
+    src/ui/db_sidebar.cpp
+    src/ui/db_connection_dialog.cpp
 
     # Utils
     src/utils/file_dialog.cpp
@@ -143,6 +150,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     SQLite::SQLite3
     nlohmann_json::nlohmann_json
     nfd
+    pqxx
 )
 
 # Platform-specific linking

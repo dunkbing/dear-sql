@@ -19,13 +19,9 @@ typedef void *MetalLayer;
 #endif
 #include <memory>
 #include <vector>
-
-// Forward declarations
-class Database;
-class Tab;
-class TabManager;
-class DatabaseSidebar;
-class FileDialog;
+#include "ui/db_sidebar.hpp"
+#include "tabs/tab_manager.hpp"
+#include "utils/file_dialog.hpp"
 
 class Application {
 public:
@@ -80,13 +76,13 @@ public:
     }
 
     // Database management
-    std::vector<std::shared_ptr<Database>> &getDatabases() {
+    std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() {
         return databases;
     }
-    const std::vector<std::shared_ptr<Database>> &getDatabases() const {
+    const std::vector<std::shared_ptr<DatabaseInterface>> &getDatabases() const {
         return databases;
     }
-    void addDatabase(const std::shared_ptr<Database>& db);
+    void addDatabase(const std::shared_ptr<DatabaseInterface>& db);
 
     // Window reference
     GLFWwindow *getWindow() const {
@@ -123,7 +119,7 @@ private:
     bool dockingLayoutInitialized = false;
 
     // Data
-    std::vector<std::shared_ptr<Database>> databases;
+    std::vector<std::shared_ptr<DatabaseInterface>> databases;
 
     // Private helper methods
     bool initializeGLFW();

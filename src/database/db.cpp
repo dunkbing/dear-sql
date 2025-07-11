@@ -1,4 +1,4 @@
-#include "database/database.hpp"
+#include "database/db.hpp"
 #include <iostream>
 
 Database::Database(const std::string &name, const std::string &path) : name(name), path(path) {}

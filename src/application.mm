@@ -1,9 +1,8 @@
 #include "application.hpp"
-#include "database/database.hpp"
+#include "database/db.hpp"
 #include "imgui_impl_metal.h"
 #include "tabs/tab_manager.hpp"
 #include "themes.hpp"
-#include "ui/database_sidebar.hpp"
 #include "utils/file_dialog.hpp"
 #include "utils/toggle_button.hpp"
 #include <fstream>
@@ -167,7 +166,7 @@ void Application::setDarkTheme(bool dark) {
     Theme::ApplyNativeTheme(darkTheme ? Theme::NATIVE_DARK : Theme::NATIVE_LIGHT);
 }
 
-void Application::addDatabase(const std::shared_ptr<Database> &db) {
+void Application::addDatabase(const std::shared_ptr<DatabaseInterface> &db) {
     databases.push_back(db);
 }
 
@@ -429,8 +428,7 @@ void Application::renderMainUI() {
 
     ImGui::Begin("DockSpace Demo", nullptr, window_flags);
 
-    // Menu bar
-    renderMenuBar();
+    // Menu bar removed
 
     ImGui::PopStyleVar(3);
 
@@ -458,31 +456,6 @@ void Application::renderMainUI() {
 
 void Application::renderMenuBar() {
     if (ImGui::BeginMenuBar()) {
-        if (ImGui::BeginMenu("File")) {
-            if (ImGui::MenuItem("Open Database", "Ctrl+O")) {
-                auto db = fileDialog->openDatabaseDialog();
-                if (db) {
-                    // Try to connect and load tables
-                    if (db->connect()) {
-                        db->refreshTables();
-                        std::cout << "Adding database to list. Tables loaded: "
-                                  << db->getTables().size() << std::endl;
-                        addDatabase(db);
-                    } else {
-                        std::cerr << "Failed to open database: " << db->getPath() << std::endl;
-                    }
-                }
-            }
-            if (ImGui::MenuItem("New SQL Editor", "Ctrl+N")) {
-                tabManager->createSQLEditorTab();
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Exit", "Alt+F4")) {
-                glfwSetWindowShouldClose(window, true);
-            }
-            ImGui::EndMenu();
-        }
-
         if (ImGui::BeginMenu("View")) {
             if (ImGui::MenuItem("Refresh All")) {
                 for (auto &db : databases) {

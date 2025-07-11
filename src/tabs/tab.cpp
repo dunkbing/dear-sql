@@ -1,13 +1,13 @@
 #include "tabs/tab.hpp"
 #include "application.hpp"
-#include "database/database.hpp"
-#include "database/query_executor.hpp"
+#include "database/db.hpp"
+#include "database/db_interface.hpp"
 #include "imgui.h"
-#include <cstring>
+
 #include <iostream>
 
 // Base Tab class
-Tab::Tab(const std::string &name, TabType type) : name(name), type(type) {}
+Tab::Tab(const std::string &name, const TabType type) : name(name), type(type) {}
 
 // SQLEditorTab implementation
 SQLEditorTab::SQLEditorTab(const std::string &name) : Tab(name, TabType::SQL_EDITOR) {}
@@ -30,7 +30,7 @@ void SQLEditorTab::render() {
         if (selectedDb >= 0 && selectedDb < (int)databases.size()) {
             auto &db = databases[selectedDb];
             if (db->connect()) {
-                queryResult = QueryExecutor::executeQuery(db->getConnection(), sqlQuery);
+                queryResult = db->executeQuery(sqlQuery);
                 strncpy(resultBuffer, queryResult.c_str(), sizeof(resultBuffer) - 1);
                 resultBuffer[sizeof(resultBuffer) - 1] = '\0';
             }
@@ -198,10 +198,10 @@ void TableViewerTab::loadData() {
     auto &databases = app.getDatabases();
 
     // Find database
-    Database *db = nullptr;
+    std::shared_ptr<DatabaseInterface> db = nullptr;
     for (auto &database : databases) {
         if (database->getPath() == databasePath && database->isConnected()) {
-            db = database.get();
+            db = database;
             break;
         }
     }
@@ -210,14 +210,14 @@ void TableViewerTab::loadData() {
         return;
 
     // Get total row count
-    totalRows = QueryExecutor::getRowCount(db->getConnection(), tableName);
+    totalRows = db->getRowCount(tableName);
 
     // Get column names
-    columnNames = QueryExecutor::getColumnNames(db->getConnection(), tableName);
+    columnNames = db->getColumnNames(tableName);
 
     // Get data with pagination
     int offset = currentPage * rowsPerPage;
-    tableData = QueryExecutor::getTableData(db->getConnection(), tableName, rowsPerPage, offset);
+    tableData = db->getTableData(tableName, rowsPerPage, offset);
 
     // Store original data for change tracking
     originalData = tableData;

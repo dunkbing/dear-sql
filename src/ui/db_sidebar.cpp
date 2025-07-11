@@ -1,9 +1,8 @@
-#include "ui/database_sidebar.hpp"
+#include "ui/db_sidebar.hpp"
 #include "application.hpp"
-#include "database/database.hpp"
+#include "database/db_interface.hpp"
 #include "imgui.h"
 #include "tabs/tab_manager.hpp"
-#include "utils/file_dialog.hpp"
 #include <iostream>
 
 void DatabaseSidebar::render() {
@@ -12,17 +11,25 @@ void DatabaseSidebar::render() {
     ImGui::Begin("Databases");
 
     if (ImGui::Button("Open Database", ImVec2(-1, 0))) {
-        auto db = app.getFileDialog()->openDatabaseDialog();
-        if (db) {
-            // Try to connect and load tables
-            if (db->connect()) {
-                db->refreshTables();
-                std::cout << "Adding database to list. Tables loaded: " << db->getTables().size()
-                          << std::endl;
-                app.addDatabase(db);
-            } else {
-                std::cerr << "Failed to open database: " << db->getPath() << std::endl;
-            }
+        connectionDialog.showDialog();
+    }
+
+    // Always render the dialog to handle multi-frame interactions
+    if (connectionDialog.isDialogOpen()) {
+        connectionDialog.showDialog();
+    }
+
+    // Check if dialog completed and get result
+    auto db = connectionDialog.getResult();
+    if (db) {
+        // Try to connect and load tables
+        if (db->connect()) {
+            db->refreshTables();
+            std::cout << "Adding database to list. Tables loaded: " << db->getTables().size()
+                      << std::endl;
+            app.addDatabase(db);
+        } else {
+            std::cerr << "Failed to open database: " << db->getConnectionString() << std::endl;
         }
     }
 
@@ -105,7 +112,7 @@ void DatabaseSidebar::renderTableNode(size_t databaseIndex, size_t tableIndex) {
 
     // Double-click to open table viewer
     if (ImGui::IsItemHovered() && ImGui::IsMouseDoubleClicked(0)) {
-        app.getTabManager()->createTableViewerTab(db->getPath(), table.name);
+        app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
     }
 
     // Context menu for table
@@ -140,7 +147,7 @@ void DatabaseSidebar::handleTableContextMenu(size_t databaseIndex, size_t tableI
 
     if (ImGui::BeginPopupContextItem()) {
         if (ImGui::MenuItem("View Data")) {
-            app.getTabManager()->createTableViewerTab(db->getPath(), table.name);
+            app.getTabManager()->createTableViewerTab(db->getConnectionString(), table.name);
         }
         if (ImGui::MenuItem("Show Structure")) {
             // TODO: Show table structure in a tab
